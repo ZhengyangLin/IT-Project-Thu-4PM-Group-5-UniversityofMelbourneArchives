@@ -1,0 +1,73 @@
+preprocess:
+  deskew_deadzone_deg: 0.5
+  clahe_clip: 2.0
+  clahe_grid: 8
+  min_text_ratio: 0.005
+
+ocr:
+  engines:
+    - paddle
+  coarse_upscale: 2.0
+  coarse_target_char_px: 26.0
+  fine_upscale: 2.5
+  target_char_px: 42.0
+  max_upscale: 6.0
+  min_conf: 0.3
+  max_long_side: 4000
+  paddle_max_side_limit: 0
+  probe_gaps: true
+  iou_merge: 0.5
+  tesseract_psm_coarse: [6, 11]
+  lang: en
+
+layout:
+  line_ink_percentile: 15.0
+  line_min_ratio: 0.1
+  row_y_tol: 0.5
+  row_max_x_gap: 6.0
+
+view:
+  grid_max_cols: 120
+  grid_max_blank_rows: 2
+  show_row_no: true
+
+rule:
+  lock_threshold: 0.85
+  anchor_fuzz: 85
+  year_range: [1900, 2000]
+  architects:
+    - YUNCKEN FREEMAN ARCHITECTS PTY LTD
+    - YUNCKEN FREEMAN
+    - BATES SMART MCCUTCHEON
+    - BATES SMART
+
+llm:
+  enabled: true
+  base_url: https://www.dmxapi.com/v1
+  api_key_env: OPENAI_API_KEY
+  model: deepseek-v4-flash
+  temperature: 0.0
+  max_tokens: 200000
+  timeout: 600
+  max_retries: 0
+
+conf:
+  w_agreement: 0.18
+  w_ocr_conf: 0.18
+  w_format: 0.18
+  w_cross_sheet: 0.18
+  w_reread: 0.18
+  w_cluster: 0.1
+  w_llm_conf: 0.15
+  llm_conf_map: {high: 1.0, medium: 0.7, low: 0.35}
+  agreement_after_adjudication: 0.85
+  t_high: 0.75
+  t_low: 0.45
+  reread_fields:
+    - drawing_number
+    - date
+    - scale
+  correction_conf_ceiling: 0.85
+
+debug_viz: true
+write_trace: true
