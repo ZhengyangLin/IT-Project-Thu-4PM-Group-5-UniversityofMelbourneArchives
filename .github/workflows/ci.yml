@@ -6,10 +6,13 @@ on:
       - "feature/**"
       - "Develop"
       - "integration/**"
+      - "main"
 
   pull_request:
     branches:
+      - "integration/**"
       - "Develop"
+      - "main"
 
 jobs:
   unit-test:
