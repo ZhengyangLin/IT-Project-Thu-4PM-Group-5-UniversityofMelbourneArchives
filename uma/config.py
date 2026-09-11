@@ -28,7 +28,6 @@ class OcrCfg:
     min_conf: float = 0.30
     max_long_side: int = 6000
     paddle_max_side_limit: int = 0
-    probe_gaps: bool = True
     iou_merge: float = 0.50
     tesseract_psm_coarse: tuple = (6, 11)
     lang: str = "en"
@@ -58,8 +57,6 @@ class RuleCfg:
     lock_threshold: float = 0.85
     anchor_fuzz: int = 85
     year_range: tuple = (1900, 2000)
-
-    # Known architect names
     architects: list[str] = field(default_factory=lambda: [
         "YUNCKEN FREEMAN ARCHITECTS PTY LTD",
         "YUNCKEN FREEMAN",
@@ -87,19 +84,13 @@ class ConfidenceCfg:
     w_agreement: float = 0.15
     w_ocr_conf: float = 0.15
     w_format: float = 0.15
-    w_cross_sheet: float = 0.15
-    w_reread: float = 0.15
-    w_cluster: float = 0.10
     w_llm_conf: float = 0.15
-
-    # Map LLM confidence labels to numeric values
     llm_conf_map: dict = field(default_factory=lambda: {
         "high": 1.0, "medium": 0.7, "low": 0.35})
 
     agreement_after_adjudication: float = 0.85
     t_high: float = 0.75
     t_low: float = 0.45
-    reread_fields: list[str] = field(default_factory=lambda: ["drawing_number", "date", "scale"])
     correction_conf_ceiling: float = 0.85
 
 
@@ -125,7 +116,6 @@ class Config:
             cfg = _merge(cfg, data)
         return cfg
 
-    # Convert configuration to a dictionary
     def dump(self) -> dict[str, Any]:
         return asdict(self)
 
@@ -135,14 +125,11 @@ def _merge(cfg: Config, data: dict) -> Config:
     import logging
     log = logging.getLogger(__name__)
     unknown: list[str] = []
-
     for section, values in data.items():
         if not hasattr(cfg, section):
             unknown.append(section)
             continue
-
         target = getattr(cfg, section)
-
         if isinstance(values, dict) and hasattr(target, "__dataclass_fields__"):
             for k, v in values.items():
                 if hasattr(target, k):
@@ -151,10 +138,7 @@ def _merge(cfg: Config, data: dict) -> Config:
                     unknown.append(f"{section}.{k}")
         else:
             setattr(cfg, section, values)
-
-    # Warn about unknown configuration keys
     if unknown:
         log.warning("Ignored %d unrecognized keys in config.yaml: %s",
                     len(unknown), ", ".join(unknown))
-
     return cfg
