@@ -1,15 +1,3 @@
-"""Command-line test entry for OCR, title block localization, and visualization.
-
-Single image:
-    python run.py --image /path/to/605_A64.tif --node-id 12847
-
-Batch:
-    python run.py --dir /path/to/images --limit 20
-
-Select OCR engines:
-    python run.py --image sample.tif --engines paddle,tesseract
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -18,368 +6,244 @@ import sys
 import time
 from pathlib import Path
 
-from uma import locate, preprocess, viz
 from uma.config import Config
 from uma.logging_utils import log_values, setup_logging
-from uma.ocr.engines import build_engines
-from uma.ocr.fusion import read_all
+from uma.pipeline import Pipeline, node_id_from_path, write_outputs
 
 IMG_EXT = {".tif", ".tiff", ".jpg", ".jpeg", ".png", ".bmp", ".webp"}
-
 log = logging.getLogger(__name__)
 
 
+# Write console output through the application logger.
 def _out(*values: object) -> None:
-    """Write output through the configured logger."""
     log_values(log, *values)
 
 
-def node_id_from_path(path: Path) -> str:
-    """Use the parent folder name as the node ID."""
-    return path.parent.name
-
-
+# Collect input images and assign a node ID to each one.
 def collect(args) -> list[tuple[str, str]]:
-    """Collect image paths and node IDs."""
     if args.image:
         p = Path(args.image)
-
         if not p.exists():
-            sys.exit(f"Image does not exist: {p}")
-
+            sys.exit(f"Image not found: {p}")
         return [(str(p), args.node_id or node_id_from_path(p))]
 
     root = Path(args.dir)
-
     if not root.exists():
-        sys.exit(f"Directory does not exist: {root}")
+        sys.exit(f"Directory not found: {root}")
 
-    jobs = []
-
+    out = []
     for p in sorted(root.rglob("*")):
         if p.suffix.lower() in IMG_EXT:
-            jobs.append((str(p), node_id_from_path(p)))
-
+            out.append((str(p), node_id_from_path(p)))
     if args.limit:
-        jobs = jobs[:args.limit]
-
-    return jobs
-
-
-def process_image(
-    path: str,
-    node: str,
-    cfg: Config,
-    engines,
-    out_dir: str,
-) -> dict:
-    """Run preprocessing, coarse OCR, localization, and debug visualization."""
-
-    started = time.time()
-
-    log.info("Starting image processing: node=%s file=%s", node, path)
-
-    # Step 1: preprocess the source image.
-    gray, plain, preprocess_meta = preprocess.run(
-        path,
-        cfg.preprocess,
-    )
-
-    log.info(
-        "Preprocessing completed: image size=%dx%d",
-        gray.shape[1],
-        gray.shape[0],
-    )
-
-    # Step 2: run coarse OCR on the whole drawing.
-    coarse_upscale = cfg.ocr.coarse_upscale
-
-    tokens, ocr_diag = read_all(
-        gray,
-        engines,
-        coarse_upscale,
-        cfg.ocr.iou_merge,
-        cfg.ocr.min_conf,
-        max_side=cfg.ocr.max_long_side,
-    )
-
-    if not tokens:
-        raise RuntimeError("OCR returned no text tokens.")
-
-    log.info(
-        "Coarse OCR completed: %d tokens detected",
-        len(tokens),
-    )
-
-    # Step 3: locate the title block.
-    locate_result = locate.locate(
-        plain,
-        tokens,
-    )
-
-    log.info(
-        "Title block localization completed: method=%s confidence=%.3f bbox=%s",
-        locate_result.method,
-        locate_result.confidence,
-        locate_result.bbox,
-    )
-
-    # Step 4: prepare the debug output directory.
-    debug_dir = Path(out_dir) / "debug"
-    debug_dir.mkdir(parents=True, exist_ok=True)
-
-    token_path = debug_dir / f"{node}_0_tokens.jpg"
-    overview_path = debug_dir / f"{node}_1_overview.jpg"
-    titleblock_path = debug_dir / f"{node}_2_titleblock.jpg"
-
-    # Step 5: save OCR token visualization.
-    viz.draw_tokens(
-        plain,
-        tokens,
-        str(token_path),
-    )
-
-    log.info(
-        "OCR token visualization saved: %s",
-        token_path,
-    )
-
-    # Step 6: save title block localization visualization.
-    viz.draw_v2(
-        plain,
-        tokens,
-        locate_result,
-        str(overview_path),
-    )
-
-    log.info(
-        "Localization visualization saved: %s",
-        overview_path,
-    )
-
-    # Step 7: save the detected title block crop.
-    viz.save_titleblock_crop(
-        gray,
-        locate_result.bbox,
-        str(titleblock_path),
-    )
-
-    log.info(
-        "Title block crop saved: %s",
-        titleblock_path,
-    )
-
-    elapsed = time.time() - started
-
-    result = {
-        "node_id": node,
-        "image": path,
-        "token_count": len(tokens),
-        "localization_method": locate_result.method,
-        "localization_confidence": locate_result.confidence,
-        "title_bbox": locate_result.bbox,
-        "token_visualization": str(token_path),
-        "overview_visualization": str(overview_path),
-        "titleblock_crop": str(titleblock_path),
-        "elapsed_sec": round(elapsed, 2),
-        "preprocess": preprocess_meta,
-        "ocr": ocr_diag,
-    }
-
-    log.info(
-        "Image processing completed: node=%s elapsed=%.2fs",
-        node,
-        elapsed,
-    )
-
-    return result
+        out = out[:args.limit]
+    return out
 
 
+# Parse command-line arguments and run the extraction pipeline.
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="OCR title block localization and visualization test"
-    )
+    ap = argparse.ArgumentParser(
+        description="Extract metadata from UMA drawing title blocks")
+    src = ap.add_mutually_exclusive_group(required=False)
 
-    source = parser.add_mutually_exclusive_group(required=True)
-
-    source.add_argument(
-        "--image",
-        help="Path to a single image",
-    )
-
-    source.add_argument(
+    # Input source options.
+    src.add_argument("--image", help="Path to a single image")
+    src.add_argument(
         "--dir",
-        help="Root directory containing images",
+        help="Root image directory; each parent folder name is used as the Node ID",
     )
+    # src.add_argument(
+    #     "--check", action="store_true", help="Run environment checks only")
+    src.add_argument("--demo", action="store_true",
+                     help="Generate a synthetic drawing and run the full pipeline")
 
-    parser.add_argument(
-        "--node-id",
-        help="Manual node ID for single-image mode",
-    )
-
-    parser.add_argument(
-        "--config",
-        default="config.yaml",
-        help="Configuration file path",
-    )
-
-    parser.add_argument(
-        "--out",
-        default="output",
-        help="Output directory",
-    )
-
-    parser.add_argument(
-        "--limit",
-        type=int,
-        help="Process only the first N images",
-    )
-
-    parser.add_argument(
+    # General processing options.
+    ap.add_argument(
+        "--node-id", help="Set the Node ID manually in single-image mode")
+    ap.add_argument("--config", default="config.yaml")
+    ap.add_argument("--out", default="output")
+    ap.add_argument("--limit", type=int, help="Process only the first N images")
+    ap.add_argument(
+        "--no-llm", action="store_true",
+        help="Run rule-based extraction only; do not call the model")
+    ap.add_argument(
+        "--viz-only", action="store_true",
+        help="Generate debug images only; do not extract metadata")
+    ap.add_argument(
         "--engines",
-        help="Override OCR engines, for example: paddle,tesseract",
+        help="Override the comma-separated OCR engine list, e.g. paddle,tesseract",
     )
+    ap.add_argument("--quiet-prompt", action="store_true",
+                    help="Do not print the full prompt sent to the model")
+    ap.add_argument("--force", action="store_true",
+                    help="Process images classified as unreadable by triage")
+    ap.add_argument("--triage-only", action="store_true",
+                    help="Run step 0 triage only and output a feasibility report")
+    ap.add_argument("-v", "--verbose", action="store_true")
+    args = ap.parse_args()
 
-    parser.add_argument(
-        "-v",
-        "--verbose",
-        action="store_true",
-        help="Enable verbose logging",
-    )
-
-    args = parser.parse_args()
-
-    log_handler = setup_logging(
-        Path(args.out) / "logs",
-        args.verbose,
-    )
-
+    # Initialize logging and runtime tracking.
+    log_handler = setup_logging(Path(args.out) / "logs", args.verbose)
     started = time.time()
+    log.info("Application started: log_dir=%s verbose=%s", Path(args.out) / "logs",
+             args.verbose)
+    log.info("Runtime arguments: %s", vars(args))
 
-    log.info(
-        "Program started: output=%s verbose=%s",
-        args.out,
-        args.verbose,
-    )
 
-    log.info(
-        "Arguments: %s",
-        vars(args),
-    )
+    # Generate and process a synthetic demo image when requested.
+    if args.demo:
 
-    # Load project configuration.
+        p = make_demo(out_dir=str(Path(args.out) / "demo"))
+        _out(f"Synthetic drawing generated: {p}\n")
+        args.dir, args.image = str(Path(p).parent.parent), None
+
+    # Require an image or directory unless another mode provides input.
+    if not (args.image or args.dir):
+        ap.error("--image or --dir is required (unless using --check or --demo)")
+
+    # Load configuration and apply command-line overrides.
     cfg = Config.load(args.config)
-
+    if args.no_llm or args.viz_only:
+        cfg.llm.enabled = False
     if args.engines:
-        cfg.ocr.engines = [
-            engine.strip()
-            for engine in args.engines.split(",")
-            if engine.strip()
-        ]
+        cfg.ocr.engines = [e.strip() for e in args.engines.split(",") if e.strip()]
+    cfg.debug_viz = True
 
-    # Build the configured OCR engines.
-    engines = build_engines(
-        cfg.ocr.engines,
-        cfg.ocr.lang,
-        cfg.ocr.paddle_max_side_limit,
-        cfg.ocr.tesseract_psm_coarse,
-    )
-
-    log.info(
-        "OCR engines loaded: %s",
-        [engine.name for engine in engines],
-    )
-
+    # Build the list of images to process.
     jobs = collect(args)
-
     if not jobs:
-        sys.exit("No images were found.")
+        sys.exit("No images found")
 
-    _out(f"Images to process: {len(jobs)}")
+    # Run image triage only and export the feasibility report.
+    if args.triage_only:
+        from uma.triage import build_manifest, summarize
+        import json as _json
+        root = args.dir or str(Path(args.image).parent)
+        rows = build_manifest(root)
+        rep = summarize(rows)
+        _out(_json.dumps(rep, ensure_ascii=False, indent=2))
+        Path(args.out).mkdir(parents=True, exist_ok=True)
+        import pandas as _pd
+        _pd.DataFrame(rows).to_csv(Path(args.out, "manifest.csv"),
+                                   index=False, encoding="utf-8-sig")
+        _out(f"\nManifest  {args.out}/manifest.csv")
+        return
 
+    _out(f"Images queued: {len(jobs)}\n")
+    log.info("Queued tasks: %d image(s)", len(jobs))
+
+    # Create the pipeline and process each queued image.
+    pipe = Pipeline(cfg, force=args.force, verbose_prompt=not args.quiet_prompt)
+    records = []
     succeeded = 0
     failed = 0
-
-    for index, (path, node) in enumerate(jobs, 1):
-        _out(
-            f"[{index}/{len(jobs)}] "
-            f"node={node} "
-            f"file={Path(path).name}"
-        )
-
+    for i, (path, node) in enumerate(jobs, 1):
+        _out(f"[{i}/{len(jobs)}] node={node}  {Path(path).name}")
         try:
-            result = process_image(
-                path,
-                node,
-                cfg,
-                engines,
-                args.out,
-            )
-
-        except Exception as exc:
+            rec = pipe.process(path, node, out_dir=args.out)
+        except Exception as e:
             failed += 1
-
-            log.exception(
-                "Image processing failed: node=%s file=%s",
-                node,
-                path,
-            )
-
-            _out(f"    Failed: {exc}")
-
+            logging.exception("Failed to process image: %s", path)
+            _out(f"    ✗ {e}")
             continue
+        records.append(rec)
 
-        succeeded += 1
+        # Track success and failure counts.
+        failure = (rec.diagnostics.get("processing_error")
+                   or rec.diagnostics.get("fatal"))
+        if failure:
+            failed += 1
+            log.error("Task failed: node=%s path=%s reason=%s",
+                      node, path, failure)
+        else:
+            succeeded += 1
+        _summarize(rec)
 
-        _out(
-            f"    OCR tokens: {result['token_count']}"
-        )
+    # Summarize LLM token usage across processed images.
+    used = [r.diagnostics.get("llm", {}).get("usage") for r in records]
+    used = [u for u in used if u and u.get("total_tokens")]
+    if used:
+        pin = sum(u["prompt_tokens"] for u in used)
+        pout = sum(u["completion_tokens"] for u in used)
+        n = len(used)
+        _out(f"\nModel usage  {n} call(s)  input {pin:,}  output {pout:,}  "
+             f"total {pin+pout:,} tokens")
+        _out(f"             Per-image average: input {pin//n:,}  output {pout//n:,}"
+             f"  →  about {(pin+pout)*1000//n:,} tokens per 1,000 images")
 
-        _out(
-            f"    Localization: "
-            f"{result['localization_method']} "
-            f"confidence={result['localization_confidence']:.3f}"
-        )
+    # Write final CSV and audit outputs.
+    if records and not args.viz_only:
+        try:
+            paths = write_outputs(records, args.out)
+            _out(f"\nResults table  {paths['csv']}")
+            _out(f"Audit records  {paths['sidecar_dir']}/")
+        except PermissionError as e:
+            _out(f"\n✗ Failed to write the results table: {e}")
+            _out("  Another application is using the file "
+                 "(most likely sheets.csv is open in Excel).")
+            _out(f"  Per-image audit records have already been saved: "
+                 f"{args.out}/sidecar/")
+            _out("  Close the application using the file, then rerun only the "
+                 "table export; recognition does not need to run again.")
 
-        _out(
-            f"    Bounding box: {result['title_bbox']}"
-        )
-
-        _out(
-            f"    Token visualization: "
-            f"{result['token_visualization']}"
-        )
-
-        _out(
-            f"    Overview visualization: "
-            f"{result['overview_visualization']}"
-        )
-
-        _out(
-            f"    Title block crop: "
-            f"{result['titleblock_crop']}"
-        )
-
+    # Report debug output location and total runtime.
+    _out(f"Debug images  {args.out}/debug/")
     elapsed = time.time() - started
+    log.info("Run finished: total=%d succeeded=%d failed=%d elapsed=%.2fs log=%s",
+             len(jobs), succeeded, failed, elapsed,
+             log_handler.current_path or Path(args.out) / "logs")
 
-    log.info(
-        "Program finished: total=%d succeeded=%d failed=%d elapsed=%.2fs log=%s",
-        len(jobs),
-        succeeded,
-        failed,
-        elapsed,
-        log_handler.current_path or Path(args.out) / "logs",
-    )
-
-    _out("")
-    _out(f"Total: {len(jobs)}")
-    _out(f"Succeeded: {succeeded}")
-    _out(f"Failed: {failed}")
-    _out(f"Debug images: {Path(args.out) / 'debug'}")
-
+    # Return a failure exit code if any image failed.
     if failed:
+        log.error("This run had %d failed task(s); setting the process exit code to 1",
+                  failed)
         raise SystemExit(1)
 
 
+# Print a short summary of one processed record.
+def _summarize(rec) -> None:
+    d = rec.diagnostics
+
+    # Stop early when a fatal processing error was recorded.
+    if "fatal" in d:
+        log.error("    ✗ %s", d["fatal"])
+        return
+
+    # Display basic triage, OCR, and localization information.
+    tb = d.get("title_block", {})
+    tri = d.get("triage", {})
+    co = d.get("coarse_ocr", {})
+    crop = d.get("crop_size")
+    _out(f"    Character height {tri.get('char_height_p90_px', '?')}px"
+          f" ({tri.get('verdict', '?')})"
+          f"  OCR blocks {co.get('token_count', 0)}"
+          f"  Localization {tb.get('method', '?')} score {tb.get('score', 0)}"
+          + (f"  Crop {crop[0]}x{crop[1]}" if crop else ""))
+
+    # Display any degraded processing conditions.
+    if d.get("degraded_reasons"):
+        for r in d["degraded_reasons"]:
+            _out(f"    ! {r}")
+
+    # Stop if no metadata fields were extracted.
+    if not rec.fields:
+        _out("    No fields extracted")
+        return
+
+    # Display each extracted field with confidence and source.
+    for name, fv in rec.fields.items():
+        mark = {"auto_accept": "✓", "needs_review": "?", "rejected": "✗",
+                "locked": "✓"}.get(fv.status, "·")
+        val = (fv.corrected or fv.verbatim or f"(empty: {fv.reason})")[:46]
+        _out(f"      {mark} {name:16s} {val:48s} {fv.confidence:.2f} [{fv.source}]")
+
+    # Warn when only partial rule-based results are available.
+    if d.get("processing_error"):
+        log.error("    ✗ Overall processing failed: %s", d["processing_error"])
+        log.warning("    The displayed and saved fields are only partial rule-based "
+                    "results and must be reviewed")
+
+
+# Run the command-line application.
 if __name__ == "__main__":
     main()
