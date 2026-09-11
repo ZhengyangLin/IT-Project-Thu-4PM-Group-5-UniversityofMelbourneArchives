@@ -69,15 +69,16 @@ class PaddleEngine(Engine):
         attempts = [
             dict(lang=self._lang, use_textline_orientation=self._use_angle,
                  enable_mkldnn=False,
+                 device="gpu:0",
                  **v3_off),
             dict(lang=self._lang, use_textline_orientation=self._use_angle,
-
+                 device="gpu:0",
                  **v3_off),
             dict(lang=self._lang,
-
+                 device="gpu:0",
                  **v3_off),
             dict(lang=self._lang, use_angle_cls=self._use_angle,
-
+                 device="gpu:0",
                  show_log=False),
             dict(lang=self._lang),
         ]
