@@ -144,7 +144,7 @@ def locate_by_anchor(tokens: list[Token], page: tuple[int, int],
     keep = [hits[0]]
     for t in hits[1:]:
         near = min(max(abs(t.cx - k.cx) / W, abs(t.cy - k.cy) / H) for k in keep)
-        if near <= 0.22:
+        if near <= 0.18:
             keep.append(t)
 
     x0 = min(t.x0 for t in keep); y0 = min(t.y0 for t in keep)

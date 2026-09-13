@@ -43,7 +43,7 @@ FIELD_DESC = {
                        "or AMENDED FOUNDATION DETAILS.\n"
                        "                  Distinguish it from the project name: the "
                        "title says what the drawing shows, not whose property it is."),
-    "architect":      "Name of the architect or architectural practice",
+    "architect":      "Name of the architect or architectural practice; if none is identified, use the drawing producer or issuer shown in the title block. Pay particular attention to company names ending in LTD. or PTY. LTD., including the full name preceding the suffix. Use layout and nearby contact details to establish the role; the suffix alone is insufficient. Extract only the name from View 2, excluding contact details. Return null if the role is unclear.",
     "draughtsperson": "Draughtsperson, usually shown as initials",
     "drawing_number": ("Drawing number. Common forms include 562/D8 and 603/A1 "
                        "(digits, slash, letter and digits), as well as A-1234 and "
@@ -73,7 +73,11 @@ Non-negotiable requirements:
 1. Every field value must be composed from token IDs in View 2. Do not introduce any text that is absent from the index.
 2. verbatim is the exact text of the selected tokens joined with single spaces. corrected is the cleaned form, used only for standardized capitalization or punctuation, or for an evidence-backed OCR correction. Keep them separate and never alter verbatim.
 3. When uncertain, return null with one of these reason codes: illegible, not_present, ambiguous, or low_resolution. Prefer an empty field to a plausible guess.
-4. Do not infer missing facts. If no architect appears on the drawing, leave it empty; do not infer one from the project name.
+4. Do not infer missing facts or infer an architect from the project name.
+   Prefer an explicitly identified architect; otherwise, follow the field
+   definition to select a supported drawing producer or issuer.
+   If neither is supported, return tokens: [], verbatim: null, and reason:
+   ambiguous if a candidate's role is unclear, or not_present if none appears.
 5. A date inside the small REVISION / No / DATE / BY table is not the drawing date.
 6. For a text block marked ← alternatives, choose the most plausible supplied candidate and explain the basis. Do not output text outside those candidates. **The primary candidate is not necessarily correct.** Fine OCR has higher resolution, but its detector can omit isolated narrow characters such as 1, I, or a slash, so an alternative may be more complete. When a location is marked ⚠ prefer, the rules have identified a better-supported alternative and supplied the reason. Follow it unless stronger evidence contradicts it.
 7. The ⚠ marker often indicates a superset: one candidate fully contains the primary candidate and adds only one or two characters. This usually means the detector missed isolated narrow characters such as 1, I, a slash, or a quotation mark at high resolution while the lower-resolution pass captured them. **Prefer the more complete candidate by default** unless the added portion is clearly inconsistent with the context. Put the complete value in corrected and state in correction_basis which candidate you selected and why.
