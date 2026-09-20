@@ -12,6 +12,8 @@ from ..schemas import (
     UnimelbImageSelectResponse,
     UnimelbTaskCreateRequest,
     UnimelbTaskCreatedResponse,
+    UnimelbTaskRerunResponse,
+    UnimelbTaskRerunRequest,
     Result,
 )
 from ..services import (
@@ -154,3 +156,18 @@ class UnimelbAPI(BaseAPI):
     @staticmethod
     def _create_task_call_time() -> float:
         return time.monotonic()
+
+    # Rerun OCR for the selected images and return the task result.
+    async def rerun_ocr_images(
+            self, request: UnimelbTaskRerunRequest,
+    ) -> Result[UnimelbTaskRerunResponse]:
+        try:
+            data = await self.service.rerun_ocr_images(request.image_keys)
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except UnimelbTaskRunningError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return Result[UnimelbTaskRerunResponse].ok(
+            data,
+            message="OCR image rerun task has been initiated",
+        )

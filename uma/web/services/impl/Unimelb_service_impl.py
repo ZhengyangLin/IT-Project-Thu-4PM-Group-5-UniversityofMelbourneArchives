@@ -4,7 +4,6 @@ import asyncio
 from concurrent.futures import ProcessPoolExecutor
 from concurrent.futures.process import BrokenProcessPool
 from copy import deepcopy
-from functools import partial
 import json
 import logging
 import multiprocessing
@@ -25,6 +24,7 @@ from ...schemas import (
     UnimelbImageSelectItem,
     UnimelbImageSelectResponse,
     UnimelbTaskCreatedResponse,
+    UnimelbTaskRerunResponse,
 )
 from ..Unimelb_service import (
     UnimelbService,
@@ -39,12 +39,11 @@ from ...workers.Unimelb_ocr_worker import (
 )
 
 
+# OCR input paths, supported image formats, and output settings.
 PROJECT_DIR = Path(__file__).resolve().parents[4]
 PLAN_SAMPLE_DIR = PROJECT_DIR / "plan_sample"
 OCR_FOLDERS = ("YFA_cabana", "YFA_state_government")
-IMAGE_EXTENSIONS = {
-    ".tif", ".tiff", ".jpg", ".jpeg", ".png", ".bmp", ".webp",
-}
+IMAGE_EXTENSIONS = {".tif", ".tiff", ".jpg", ".jpeg", ".png", ".bmp", ".webp",}
 log = logging.getLogger(__name__)
 UNIMELB_OCR_ENGINES = ("paddle",)
 UNIMELB_OCR_OUTPUT_ROOT = PROJECT_DIR / "output"
@@ -53,12 +52,14 @@ UNIMELB_VERBOSE_PROMPT = True
 UNIMELB_CONFIG_PATH = PROJECT_DIR / "config.yaml"
 UNIMELB_LOG_DIR = UNIMELB_OCR_OUTPUT_ROOT / "logs"
 IMAGE_STATUS_FILE = UNIMELB_OCR_OUTPUT_ROOT / "unimelb_image_status.json"
+# Image statuses: 0 pending, 1 running, 2 completed, 3 failed.
 IMAGE_STATUS_PENDING = 0
 IMAGE_STATUS_RUNNING = 1
 IMAGE_STATUS_COMPLETED = 2
 IMAGE_STATUS_FAILED = 3
 UNIMELB_SHARED_TASK_UUID = "00000000-0000-4000-8000-000000000001"
 RESTART_INTERRUPTED_MESSAGE = "Service restarted before the OCR task completed"
+# Support string statuses from legacy status files.
 LEGACY_IMAGE_STATUSES = {
     "not_started": IMAGE_STATUS_PENDING,
     "queued": IMAGE_STATUS_PENDING,
@@ -68,6 +69,7 @@ LEGACY_IMAGE_STATUSES = {
 }
 
 
+# Manage image listings, background OCR tasks, and cached image statuses.
 class UnimelbServiceImpl(UnimelbService):
     def __init__(self, status_file: Path | None = None) -> None:
         self._tasks: dict[str, dict[str, Any]] = {}
@@ -86,6 +88,7 @@ class UnimelbServiceImpl(UnimelbService):
 
 
         with self._tasks_lock:
+            # Handle interrupted images and restore the shared task on startup.
             interrupted = self._mark_interrupted_running_images_failed_locked()
             if statuses_migrated or interrupted:
                 self._persist_image_statuses_locked()
@@ -95,6 +98,7 @@ class UnimelbServiceImpl(UnimelbService):
     def _ensure_ocr_executor_locked(self) -> ProcessPoolExecutor:
         if self._closing:
             raise RuntimeError("OCR service is shutting down")
+        # Create the pool on first use and initialize OCR in each worker.
         if self._ocr_executor is None:
             self._ocr_executor = ProcessPoolExecutor(
                 max_workers=2,
@@ -114,6 +118,7 @@ class UnimelbServiceImpl(UnimelbService):
         with self._ocr_executor_lock:
             return self._ensure_ocr_executor_locked()
 
+    # Discard the broken pool so later requests can create a new one.
     def _discard_broken_executor(self, executor: ProcessPoolExecutor,) -> None:
         with self._ocr_executor_lock:
             if self._ocr_executor is not executor:
@@ -128,6 +133,7 @@ class UnimelbServiceImpl(UnimelbService):
         counts = {name.upper(): 0 for name in OCR_FOLDERS}
         status_counts = {"0": 0, "1": 0, "2": 0, "3": 0}
         with self._tasks_lock:
+            # Use a status snapshot to keep the response consistent during concurrent updates.
             statuses = deepcopy(self._image_statuses)
         images: list[UnimelbImageSelectItem] = []
         for path in paths:
@@ -176,6 +182,7 @@ class UnimelbServiceImpl(UnimelbService):
         if Path(node_id).name != node_id or Path(image_name).name != image_name:
             return None
 
+        # Resolve paths and ensure the image stays within the allowed directory.
         allowed_root = (PLAN_SAMPLE_DIR / actual_folder).resolve()
         candidate = (allowed_root / node_id / image_name).resolve()
         try:
@@ -186,6 +193,7 @@ class UnimelbServiceImpl(UnimelbService):
             return None
         return candidate
 
+    # Create or resume the shared task; force requires all images to be available.
     async def create_ocr_task(self, force: bool) -> UnimelbTaskCreatedResponse:
         self._validate_folders()
         images = await asyncio.to_thread(self._collect_images)
@@ -197,6 +205,7 @@ class UnimelbServiceImpl(UnimelbService):
         now = self._now_ms()
         image_keys = [self._image_key(image) for image in images]
         all_image_keys = set(image_keys)
+        # Reserve images for this task to prevent duplicate processing by concurrent requests.
         reservation_token = object()
         with self._rerun_image_owners_lock:
             all_owned_image_keys = list(self._rerun_image_owners)
@@ -242,6 +251,7 @@ class UnimelbServiceImpl(UnimelbService):
                 )
                 previous_statuses = deepcopy(self._image_statuses)
 
+                # Clear old task state for a forced rerun or the first full run.
                 if reset_all:
                     self._image_statuses = {}
                     self._tasks.pop(task_uuid, None)
@@ -266,8 +276,7 @@ class UnimelbServiceImpl(UnimelbService):
                             self._new_image_state(
                                 image,
                                 task_uuid,
-                                IMAGE_STATUS_PENDING,
-                                now,
+                                IMAGE_STATUS_PENDING,now,
                             )
                         )
                         run_images.append(image)
@@ -288,6 +297,7 @@ class UnimelbServiceImpl(UnimelbService):
                     try:
                         self._persist_image_statuses_locked()
                     except Exception:
+                        # Restore in-memory state if persistence fails.
                         self._image_statuses = previous_statuses
                         self._restore_shared_task_locked(images)
                         raise
@@ -298,6 +308,7 @@ class UnimelbServiceImpl(UnimelbService):
             )
             raise
 
+        # Keep reservations only for images that will actually be processed.
         run_image_keys = {
             self._image_key(image) for image in run_images
         }
@@ -331,6 +342,7 @@ class UnimelbServiceImpl(UnimelbService):
                     reservation_token, run_image_keys
                 )
             raise
+        # Keep a reference to the background task until it finishes.
         self._background_tasks.add(task)
         task.add_done_callback(self._background_tasks.discard)
         return UnimelbTaskCreatedResponse(
@@ -348,6 +360,7 @@ class UnimelbServiceImpl(UnimelbService):
             if path.is_file() and path.suffix.lower() in IMAGE_EXTENSIONS
         ]
 
+    # Rebuild the shared task from image statuses; the caller must hold the task lock.
     def _restore_shared_task_locked(self, images: list[Path],) -> dict[str, Any] | None:
         restored: list[tuple[Path, dict[str, Any] | None, int]] = []
         has_task_record = False
@@ -369,6 +382,7 @@ class UnimelbServiceImpl(UnimelbService):
             return None
 
         statuses = [status for _, _, status in restored]
+        # Prioritize running or pending images before determining the final status.
         if IMAGE_STATUS_RUNNING in statuses:
             task_status = IMAGE_STATUS_RUNNING
         elif IMAGE_STATUS_PENDING in statuses:
@@ -466,13 +480,12 @@ class UnimelbServiceImpl(UnimelbService):
             if not (PLAN_SAMPLE_DIR / name).is_dir()
         ]
         if missing:
-            raise FileNotFoundError(
-                "OCR image directories not found: " + ", ".join(missing)
-            )
+            raise FileNotFoundError("OCR image directories not found: " + ", ".join(missing))
 
     async def _run_ocr_task(self,task_uuid: str,images: list[Path],output_dir: Path,*,reservation_token: object,write_batch_summary: bool = True,) -> None:
         image_keys = {self._image_key(image) for image in images}
         try:
+                # Process this batch sequentially and save each image result as it completes.
                 summary_rows: list[dict[str, Any]] = []
                 for image in images:
                     node_id = image.parent.name
@@ -508,6 +521,7 @@ class UnimelbServiceImpl(UnimelbService):
                         message=outcome.error,
                         reservation_token=reservation_token,
                     )
+                    # Save the current image result before propagating cancellation.
                     if cancellation is not None:
                         raise cancellation
 
@@ -551,6 +565,7 @@ class UnimelbServiceImpl(UnimelbService):
                 reservation_token, image_keys
             )
 
+    # Run OCR in a worker process to avoid blocking the event loop.
     async def _submit_ocr_image(self, job: OcrImageJob,) -> OcrImageOutcome:
         executor = self._get_ocr_executor()
         try:
@@ -576,6 +591,7 @@ class UnimelbServiceImpl(UnimelbService):
 
     @staticmethod
     async def _await_shielded_task(worker_task: asyncio.Task[Any],) -> tuple[Any, asyncio.CancelledError | None]:
+        # Defer outer cancellation until the current background operation finishes.
         cancellation: asyncio.CancelledError | None = None
         while True:
             try:
@@ -647,6 +663,7 @@ class UnimelbServiceImpl(UnimelbService):
                 "manual_reviewed": 0,
                 "result": deepcopy(result),
             }
+            # If provided, save the next image as running alongside the current result.
             if next_image_key is not None:
                 next_node_id, next_image_name = next_image_key.split("/", 1)
                 self._image_statuses[next_image_key] = {
@@ -673,6 +690,7 @@ class UnimelbServiceImpl(UnimelbService):
     def _format_ocr_result_for_response(cls, result: Any,) -> dict[str, dict[str, Any]]:
         if not isinstance(result, dict) or not result:
             return {}
+        # Group flat OCR fields into the nested structure used by the API response.
         nested: dict[str, dict[str, Any]] = {}
         suffixes = (
             "verbatim",
@@ -744,6 +762,7 @@ class UnimelbServiceImpl(UnimelbService):
     def _normalize_result_reason_keys(
         cls, result: dict[str, Any],
     ) -> tuple[dict[str, Any], bool]:
+        # Normalize legacy reason and notes fields and track whether migration is needed.
         normalized = dict(result)
         migrated = False
         for field_name in OCR_RESULT_FIELDS:
@@ -778,6 +797,7 @@ class UnimelbServiceImpl(UnimelbService):
 
     def _fail_unfinished_images(self,task_uuid: str,error: str,*,image_keys: set[str] | None = None,reservation_token: object | None = None,) -> None:
         now = self._now_ms()
+        # With a reservation token, fail only unfinished images still owned by this task.
         owned_image_keys = image_keys
         if reservation_token is not None:
             with self._rerun_image_owners_lock:
@@ -816,10 +836,12 @@ class UnimelbServiceImpl(UnimelbService):
     def _release_rerun_image_owners_locked(
         self, reservation_token: object, image_keys: set[str],
     ) -> None:
+        # Check the reservation token to avoid releasing images owned by another task.
         for image_key in image_keys:
             if (self._rerun_image_owners.get(image_key) is reservation_token):
                 del self._rerun_image_owners[image_key]
 
+    # Mark previously running images as failed after a service restart.
     def _mark_interrupted_running_images_failed_locked(self) -> bool:
         now = self._now_ms()
         changed = False
@@ -844,6 +866,7 @@ class UnimelbServiceImpl(UnimelbService):
             payload = json.loads(self._status_file.read_text(encoding="utf-8"))
             if not isinstance(payload, dict):
                 return {}, False
+            # Support both the legacy images wrapper and the current image-key mapping.
             legacy_images = payload.get("images")
             images = (
                 legacy_images
@@ -919,6 +942,7 @@ class UnimelbServiceImpl(UnimelbService):
         return 1 if value == 1 else 0
 
     def _persist_image_statuses_locked(self) -> None:
+        # Write to a temporary file, then replace the status file to avoid partial writes.
         temp_file = self._status_file.with_suffix(
             self._status_file.suffix + ".tmp"
         )
@@ -938,3 +962,110 @@ class UnimelbServiceImpl(UnimelbService):
     @staticmethod
     def _now_ms() -> int:
         return int(time.time() * 1000)
+
+
+    # Validate selected images, reset their statuses, and start a partial rerun.
+    async def rerun_ocr_images(self, image_keys: list[str],) -> UnimelbTaskRerunResponse:
+        self._validate_folders()
+        images = await asyncio.to_thread(self._collect_images)
+        if not images:
+            raise FileNotFoundError("No images available for OCR were found")
+
+        catalog = {self._image_key(image): image for image in images}
+        missing_image_key = next(
+            (image_key for image_key in image_keys if image_key not in catalog),
+            None,
+        )
+        if missing_image_key is not None:
+            raise FileNotFoundError(
+                f"The requested image does not exist: {missing_image_key}"
+            )
+        selected_images = [catalog[image_key] for image_key in image_keys]
+        task_uuid = UNIMELB_SHARED_TASK_UUID
+        output_dir = UNIMELB_OCR_OUTPUT_ROOT / "tasks" / task_uuid
+        now = self._now_ms()
+        selected_key_set = set(image_keys)
+        # Reserve images for this task to prevent duplicate processing by concurrent requests.
+        reservation_token = object()
+
+        with self._rerun_image_owners_lock:
+            owned_conflicting_image_keys = [
+                image_key
+                for image_key in dict.fromkeys(image_keys)
+                if image_key in self._rerun_image_owners
+            ]
+            if owned_conflicting_image_keys:
+                raise UnimelbTaskRunningError(
+                    "The selected images are being processed or are reserved "
+                    "by another task: "
+                    + ", ".join(owned_conflicting_image_keys)
+                )
+            for image_key in selected_key_set:
+                self._rerun_image_owners[image_key] = reservation_token
+
+        try:
+            with self._tasks_lock:
+                existing = self._restore_shared_task_locked(images)
+                running_image_keys = {
+                    item["image_key"]
+                    for item in (existing or {}).get("running", [])
+                    if isinstance(item, dict)
+                    and isinstance(item.get("image_key"), str)
+                }
+                running_conflicting_image_keys = [
+                    image_key
+                    for image_key in dict.fromkeys(image_keys)
+                    if image_key in running_image_keys
+                ]
+                if running_conflicting_image_keys:
+                    raise UnimelbTaskRunningError(
+                        "The selected images are being processed or are "
+                        "reserved by another task: "
+                        + ", ".join(running_conflicting_image_keys)
+                    )
+
+                previous_statuses = deepcopy(self._image_statuses)
+                for image in selected_images:
+                    self._image_statuses[self._image_key(image)] = (
+                        self._new_image_state(
+                            image, task_uuid, IMAGE_STATUS_PENDING, now
+                        )
+                    )
+                try:
+                    self._persist_image_statuses_locked()
+                except Exception:
+                    self._image_statuses = previous_statuses
+                    self._restore_shared_task_locked(images)
+                    raise
+                self._restore_shared_task_locked(images)
+        except BaseException:
+            self._release_rerun_image_owners(
+                reservation_token, selected_key_set
+            )
+            raise
+
+        try:
+            task = asyncio.create_task(
+                self._run_ocr_task(task_uuid,selected_images,output_dir, write_batch_summary=False,reservation_token=reservation_token)
+            )
+        except Exception:
+            try:
+                self._fail_unfinished_images(
+                    task_uuid,
+                    "Failed to start OCR background task",
+                    image_keys=selected_key_set,
+                    reservation_token=reservation_token,
+                )
+            finally:
+                self._release_rerun_image_owners( reservation_token, selected_key_set )
+            raise
+        # Keep a reference to the background task until it finishes.
+        self._background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
+        return UnimelbTaskRerunResponse(
+            task_uuid=task_uuid,
+            status=IMAGE_STATUS_RUNNING,
+            selected_total=len(selected_images),
+            image_keys=list(image_keys),
+            started=True,
+        )

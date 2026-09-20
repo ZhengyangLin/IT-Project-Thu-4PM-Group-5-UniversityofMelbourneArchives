@@ -11,3 +11,11 @@ class UnimelbTaskCreateRequest(BaseModel):
         default=False,
         description="Whether to force a rerun of a shared task that has already completed.",
     )
+
+# Request model for rerunning OCR on selected images.
+class UnimelbTaskRerunRequest(BaseModel):
+
+    image_keys: list[str] = Field(
+        description="List of unique identifiers for images to be rerun, "
+                    "with each item in the format of NodeID/IMAGENAME",
+    )

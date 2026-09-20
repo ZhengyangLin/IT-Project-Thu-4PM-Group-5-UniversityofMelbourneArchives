@@ -6,6 +6,7 @@ from pathlib import Path
 from ..schemas import (
     UnimelbImageSelectResponse,
     UnimelbTaskCreatedResponse,
+    UnimelbTaskRerunResponse,
 )
 
 
@@ -32,4 +33,11 @@ class UnimelbService(ABC):
     # Create an OCR task
     @abstractmethod
     async def create_ocr_task(self, force: bool) -> UnimelbTaskCreatedResponse:
+        raise NotImplementedError
+
+    # Rerun OCR for the selected images.
+    @abstractmethod
+    async def rerun_ocr_images(
+        self, image_keys: list[str],
+    ) -> UnimelbTaskRerunResponse:
         raise NotImplementedError

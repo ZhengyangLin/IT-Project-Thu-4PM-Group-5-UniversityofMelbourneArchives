@@ -127,3 +127,23 @@ class UnimelbTaskCreatedResponse(BaseModel):
     )
     total: int
     started: bool = Field(description="Did this request actually trigger OCR?")
+
+# Response model for an OCR rerun task.
+class UnimelbTaskRerunResponse(BaseModel):
+    task_uuid: str = Field(
+        description="Unique task identifier",
+    )
+    status: int = Field(
+        ge=0,
+        le=3,
+        description="Task status: 0 pending, 1 running, 2 completed, 3 failed",
+    )
+    selected_total: int = Field(
+        description="Number of images selected for rerun",
+    )
+    image_keys: list[str] = Field(
+        description="Unique identifiers of the images selected for rerun",
+    )
+    started: bool = Field(
+        description="Whether this request actually started OCR",
+    )

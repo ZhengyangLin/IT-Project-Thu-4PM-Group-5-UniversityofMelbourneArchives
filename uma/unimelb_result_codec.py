@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 
+# Shared field names used to extract OCR results.
 OCR_RESULT_FIELDS = (
     "drawing_number",
     "project_name",
@@ -22,6 +23,7 @@ OCR_REASON_CODES = frozenset({
 })
 
 
+# Flatten note collections into unique, non-empty strings.
 def note_values(*values: Any) -> list[str]:
     notes: list[str] = []
 
@@ -45,6 +47,7 @@ def split_reason_and_notes(
     raw_reason: Any, raw_notes: Any,
 ) -> tuple[str | None, list[str]]:
     notes = note_values(raw_notes)
+    # For collections, use the first known reason code and keep the rest as notes.
     if isinstance(raw_reason, (list, tuple, set)):
         reason: str | None = None
         for text in note_values(raw_reason):
@@ -55,9 +58,11 @@ def split_reason_and_notes(
         return reason, notes
     if raw_reason is None:
         return None, notes
+    # Preserve non-empty scalar reasons, including unknown codes.
     return str(raw_reason).strip() or None, notes
 
 
+# Combine valid evidence regions into a single enclosing box.
 def evidence_regions_bbox(signals: Any) -> dict[str, int] | None:
     if not isinstance(signals, dict):
         return None
@@ -83,6 +88,7 @@ def evidence_regions_bbox(signals: Any) -> dict[str, int] | None:
             "y1": max(box[3] for box in boxes),
         }
 
+    # Fall back to the overall evidence box when no valid regions are available.
     total = signals.get("evidence_bbox")
     if not isinstance(total, dict):
         return None
@@ -101,6 +107,7 @@ def tokens_bbox(
 ) -> dict[str, int] | None:
     boxes: list[list[int]] = []
     for token_id in tokens:
+        # Accept token IDs stored as either strings or integers.
         token = token_map.get(str(token_id), token_map.get(token_id))
         bbox = token.get("bbox") if isinstance(token, dict) else None
         if (
@@ -119,8 +126,8 @@ def tokens_bbox(
     }
 
 
+# Collect OCR field values and metadata into a flat result mapping.
 def extract_ocr_result(record: Any | None) -> dict[str, Any]:
-    """把 ``SheetRecord`` 转成只含基础类型的 Web 状态结果。"""
     fields = getattr(record, "fields", {}) if record is not None else {}
     token_map = (
         getattr(record, "token_map", {}) if record is not None else {}
@@ -132,6 +139,7 @@ def extract_ocr_result(record: Any | None) -> dict[str, Any]:
         verbatim = getattr(field_value, "verbatim", None)
         corrected = getattr(field_value, "corrected", None)
         confidence = getattr(field_value, "confidence", None)
+        # Prefer corrected text, falling back to verbatim OCR text.
         result[field_name] = corrected or verbatim
         result[f"{field_name}_verbatim"] = verbatim
         result[f"{field_name}_corrected"] = corrected
@@ -147,6 +155,7 @@ def extract_ocr_result(record: Any | None) -> dict[str, Any]:
         )
         result[f"{field_name}_tokens"] = tokens
         signals = getattr(field_value, "signals", {})
+        # Prefer evidence bounds, then fall back to token bounds.
         result[f"{field_name}_tokens_bbox"] = (
             evidence_regions_bbox(signals)
             or tokens_bbox(tokens, token_map)
