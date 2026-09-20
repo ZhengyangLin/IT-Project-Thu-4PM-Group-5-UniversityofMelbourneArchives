@@ -147,3 +147,18 @@ class UnimelbTaskRerunResponse(BaseModel):
     started: bool = Field(
         description="Whether this request actually started OCR",
     )
+
+
+# Defines the response data format after updating an image OCR result.
+class UnimelbImageResultUpdateResponse(BaseModel):
+
+    image_key: str
+    manual_reviewed: int = Field(
+        ge=0,
+        le=1,
+        description="Manual review status: 0 = Not reviewed, 1 = Reviewed",
+    )
+    updated_at: int = Field(description="Update timestamp (milliseconds)")
+    result: dict[str, str | None] = Field(
+        description="The eight final OCR values saved this time",
+    )

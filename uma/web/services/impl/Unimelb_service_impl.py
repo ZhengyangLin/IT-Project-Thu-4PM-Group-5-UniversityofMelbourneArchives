@@ -25,6 +25,7 @@ from ...schemas import (
     UnimelbImageSelectResponse,
     UnimelbTaskCreatedResponse,
     UnimelbTaskRerunResponse,
+    UnimelbImageResultUpdateResponse,
 )
 from ..Unimelb_service import (
     UnimelbService,
@@ -1069,3 +1070,123 @@ class UnimelbServiceImpl(UnimelbService):
             image_keys=list(image_keys),
             started=True,
         )
+
+    # Update and save the OCR result for a specified image.
+    async def update_ocr_image_result(self, image_key: str,
+                                      result: dict[str, str | None], ) -> UnimelbImageResultUpdateResponse:
+
+        # Validate the image key and submitted result.
+        clean_image_key = image_key.strip()
+        if not clean_image_key:
+            raise UnimelbTaskRunningError("image_key must not be empty")
+        if not result:
+            raise UnimelbTaskRunningError(
+                "result must not be empty; provide the fields to update"
+            )
+
+        # Collect all available images.
+        self._validate_folders()
+        images = await asyncio.to_thread(self._collect_images)
+        catalog = {self._image_key(image): image for image in images}
+        image = catalog.get(image_key)
+        if image is None:
+            raise FileNotFoundError(
+                f"The requested image does not exist: {image_key}"
+            )
+
+        # Reserve the image while it is being updated.
+        reservation_token = object()
+        with self._rerun_image_owners_lock:
+            if image_key in self._rerun_image_owners:
+                raise UnimelbTaskRunningError(
+                    "The image is being processed or is reserved by another "
+                    f"task: {image_key}"
+                )
+            self._rerun_image_owners[image_key] = reservation_token
+
+        try:
+            now = self._now_ms()
+
+            # Keep the submitted non-null OCR values.
+            submitted_result = {
+                field_name: result[field_name]
+                for field_name in OCR_RESULT_FIELDS
+                if result.get(field_name) is not None
+            }
+
+            with self._tasks_lock:
+                # Keep the previous state for rollback if saving fails.
+                previous_state = deepcopy(self._image_statuses.get(image_key))
+
+                # Prevent manual editing while OCR is running.
+                if (previous_state is not None and self._normalize_image_status(
+                        previous_state.get("status")) == IMAGE_STATUS_RUNNING):
+                    raise UnimelbTaskRunningError(
+                        "The image is being processed and cannot be edited "
+                        f"manually: {image_key}"
+                    )
+
+                # Use the existing state or create a new image state.
+                state = (
+                    deepcopy(previous_state)
+                    if previous_state is not None
+                    else self._new_image_state(
+                        image,
+                        UNIMELB_SHARED_TASK_UUID,
+                        IMAGE_STATUS_PENDING,
+                        now,
+                    )
+                )
+
+                # Merge the submitted values into the existing result.
+                previous_result = state.get("result")
+                merged_result = (
+                    dict(previous_result)
+                    if isinstance(previous_result, dict) else {}
+                )
+                merged_result.update(submitted_result)
+
+                # Save the updated result and review status.
+                state.update(result=merged_result,
+                             manual_reviewed=1,
+                             updated_at=now,
+                             )
+                self._image_statuses[image_key] = state
+
+                try:
+                    # Persist the updated image status.
+                    self._persist_image_statuses_locked()
+                except Exception:
+                    # Restore the previous state if persistence fails.
+                    if previous_state is None:
+                        self._image_statuses.pop(image_key, None)
+                    else:
+                        self._image_statuses[image_key] = previous_state
+                    self._restore_shared_task_locked(images)
+                    raise
+
+                # Refresh the shared task state.
+                self._restore_shared_task_locked(images)
+
+            return UnimelbImageResultUpdateResponse(
+                image_key=image_key,
+                manual_reviewed=1,
+                updated_at=now,
+                result=submitted_result,
+            )
+        finally:
+            # Release the image reservation when the update finishes.
+            self._release_rerun_image_owners(
+                reservation_token, {image_key}
+            )
+
+    async def start(self) -> None:
+        with self._ocr_executor_lock:
+            self._closing = False
+            self._ensure_ocr_executor_locked()
+
+    async def close(self) -> None:
+        with self._ocr_executor_lock:
+            if self._closing and self._ocr_executor is None:
+                return
+            self._closing = True

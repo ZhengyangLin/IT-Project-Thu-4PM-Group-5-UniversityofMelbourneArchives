@@ -7,6 +7,7 @@ from ..schemas import (
     UnimelbImageSelectResponse,
     UnimelbTaskCreatedResponse,
     UnimelbTaskRerunResponse,
+    UnimelbImageResultUpdateResponse
 )
 
 
@@ -41,3 +42,19 @@ class UnimelbService(ABC):
         self, image_keys: list[str],
     ) -> UnimelbTaskRerunResponse:
         raise NotImplementedError
+
+
+    # Updates and saves the OCR result for a specified image.
+    @abstractmethod
+    async def update_ocr_image_result(
+        self,
+        image_key: str,
+        result: dict[str, str | None],
+    ) -> UnimelbImageResultUpdateResponse:
+        raise NotImplementedError
+
+    async def close(self) -> None:
+        pass
+
+    async def start(self) -> None:
+        pass
