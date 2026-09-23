@@ -1,9 +1,6 @@
 <template>
   <div class="image-task-page">
- 
     <div class="bg-layer"></div>
-
-  
     <div class="page-header">
       <h1 class="page-title">
         <el-icon><DataAnalysis /></el-icon>
@@ -15,7 +12,6 @@
       </div>
     </div>
 
-    
     <div class="stat-overview">
       <div
         class="stat-card stat-card-total"
@@ -43,7 +39,6 @@
           <div class="stat-value">{{ pageData.status_counts[0] }}</div>
         </div>
       </div>
-  
       <div
         class="stat-card stat-card-running"
         :class="statusValue == 1 ? 'on' : ''"
@@ -84,7 +79,10 @@
         </div>
       </div>
     </div>
+
+
     <div class="main-grid">
+
       <div class="panel-card folder-panel">
         <div class="panel-title" @click="clearFilter">
           <el-icon><Folder /></el-icon>
@@ -107,6 +105,8 @@
           </div>
         </div>
       </div>
+
+     
       <div class="panel-card image-panel">
         <div class="panel-title">
           <el-icon><Document /></el-icon>
@@ -122,7 +122,6 @@
           >
         </div>
 
-      
         <div class="img-list-wrap">
           <div class="img-row header-row">
             <div class="col-select">select</div>
@@ -132,12 +131,12 @@
             <div class="col-imgname">Image name</div>
             <div class="col-status">Status</div>
             <div class="col-status">Review status</div>
-            <!-- <div class="col-uuid">task_uuid</div> -->
+         
             <div class="col-error">Error message</div>
             <div class="col-update">Operation</div>
           </div>
           <div class="img-box-list" v-if="pageImageList?.length">
-           
+  
             <div class="img-row" v-for="row in pageImageList" :key="row.path">
               <div class="col-select">
                 <el-checkbox
@@ -180,7 +179,7 @@
                   {{ row.manual_reviewed == 0 ? "Pending review" : "Reviewed" }}
                 </span>
               </div>
-  
+     
               <div class="col-error text-fail">
                 <el-tooltip
                   class="box-item"
@@ -192,7 +191,7 @@
                 </el-tooltip>
               </div>
               <div class="col-update">
-              
+            
                 <el-button
                   class="btn"
                   type="primary"
@@ -222,12 +221,9 @@
               </div>
             </div>
           </div>
-
-    
           <div v-if="!pageImageList?.length" class="empty-tip">
             No image task data available at present.
           </div>
-    
           <div class="pagination-wrap">
             <el-pagination
               size="small"
@@ -245,13 +241,9 @@
       </div>
     </div>
 
-
     <div class="add-identification">
- 
       <div class="float-ball-wrap" @click="addIdentificationBtn">
-       
         <svg class="progress-svg" viewBox="0 0 100 100">
-       
           <circle
             cx="50"
             cy="50"
@@ -260,6 +252,7 @@
             stroke="#e5e7eb"
             stroke-width="6"
           />
+  
           <circle
             class="progress-circle"
             cx="50"
@@ -274,7 +267,7 @@
             transform="rotate(-90 50 50)"
           />
         </svg>
-    
+   
         <div class="float-ball">
           <span v-if="progress != 0">{{ progress }}%</span>
           <span v-else>FSID</span>
@@ -282,7 +275,12 @@
       </div>
     </div>
 
-    <el-dialog v-model="addIdentificationShow" title="Comprehensive testing" width="500">
+
+    <el-dialog
+      v-model="addIdentificationShow"
+      title="Comprehensive testing"
+      width="500"
+    >
       <el-form>
         <el-form-item label="Is mandatory re-inspection required?">
           <el-switch
@@ -321,15 +319,36 @@
       <template #footer>
         <div class="dialog-footer">
           <el-button @click="submitRecheck(0)">Cancel</el-button>
-          <el-button type="primary" @click="submitRecheck(1)"> Submit </el-button>
+          <el-button type="primary" @click="submitRecheck(1)">
+            Submit
+          </el-button>
         </div>
       </template>
+    </el-dialog>
+      <el-dialog v-model="innerVisible" width="100%" title="Test Comparison" @open="handleDialogOpen" :before-close="handleCloseFabricImg">
+      <!--  -->
+      <div>
+        <!-- :urlImage="inspectImg.image_url"
+          :thumb-url-image="inspectImg.image_url" -->
+        <FabricImg
+          ref="canvasImgRef"
+          :urlImage="inspectImg.image_url"
+          :thumb-url-image="inspectImg.image_url"
+          :detecBoxs="inspectImg.result"
+          :image_key="inspectImg.image_key"
+          :conf-threshold="0.01"
+          :isEdit="isEdit"
+          v-if="innerVisible"
+        
+        />
+      </div>
     </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, computed, onUnmounted, unref, nextTick } from "vue";
+
 import {
   DataAnalysis,
   Picture,
@@ -347,13 +366,13 @@ import {
 } from "@element-plus/icons-vue";
 import { ElMessageBox, ElMessage } from "element-plus";
 import axios from "axios";
+import FabricImg from './components/FabricImg.vue';
 const loading = ref(false);
-
 enum Api {
-  taskList = "http://192.168.1.109:8000/Unimelb/ImageSelect", 
-  createTask = "http://192.168.1.109:8000/Unimelb/ocr-tasks",
-  recheck = "http://192.168.1.109:8000/Unimelb/ocr-tasks/rerun", 
-  manualReview = "http://192.168.1.109:8000/Unimelb/ocr-results/manual-review", 
+  taskList = "http://127.0.0.1:8000/Unimelb/ImageSelect",
+  createTask = "http://127.0.0.1:8000/Unimelb/ocr-tasks",
+  recheck = "http://127.0.0.1:8000/Unimelb/ocr-tasks/rerun",
+  manualReview = "http://127.0.0.1:8000/Unimelb/ocr-results/manual-review", 
 }
 const pageData = ref({
   folders: {},
@@ -395,10 +414,10 @@ async function loadData() {
       ...from,
     })
     .then(function (response) {
-
+      // 
       console.log(response.data);
       pageData.value = response.data.result;
- 
+      
       if (!response.data.result.total) {
         progress.value = 0;
       } else {
@@ -410,35 +429,38 @@ async function loadData() {
       loading.value = false;
     })
     .catch(function (error) {
-
+      
       console.error(error);
     });
 }
 const currentFile = ref("");
-
+// 
 const openFolder = (data) => {
   currentPage.value = 1;
   currentFile.value = data;
 };
-
+// 
 const clearFilter = () => {
   console.log("1");
   currentFile.value = "";
 };
-
+// 
 const statusValue = ref(null);
 const tabStatus = (val) => {
   currentPage.value = 1;
   statusValue.value = val;
 };
-
+// 
 const filterImageList = computed(() => {
   const all = pageData.value.images || [];
   let list = [...all];
+
+  //
   if (currentFile.value) {
     list = list.filter((item) => item.folder === currentFile.value);
   }
 
+  //
   if (statusValue.value) {
     list = list.filter((item) => item.status === statusValue.value);
   }
@@ -447,11 +469,11 @@ const filterImageList = computed(() => {
 });
 
 const currentPage = ref(1);
-const pageSize = ref(20);
+const pageSize = ref(20); 
 const pageImageList = computed(() => {
   const start = (currentPage.value - 1) * pageSize.value;
   const end = start + pageSize.value;
-  console.log(filterImageList.value.slice(start, end));
+  // console.log(filterImageList.value.slice(start, end));
   return filterImageList.value.slice(start, end);
 });
 const handleSizeChange = (val) => {
@@ -463,8 +485,6 @@ const handleCurrentChange = (val) => {
   console.log(`current page: ${val}`);
   currentPage.value = val;
 };
-
-
 const progress = ref(0);
 const radius = 44;
 const circumference = computed(() => 2 * Math.PI * radius);
@@ -482,14 +502,17 @@ const addIdentificationShow = ref(false);
 const force = ref(false);
 const addIdentificationBtn = async () => {
   if (unref(progress) == 0 || unref(progress) == 100) {
-
     addIdentificationShow.value = true;
   } else {
-    ElMessageBox.confirm("Detecting, do you want to continue submitting?", "Warning", {
-      confirmButtonText: "Confirmation",
-      cancelButtonText: "cancel",
-      type: "warning",
-    })
+    ElMessageBox.confirm(
+      "Detecting, do you want to continue submitting?",
+      "Warning",
+      {
+        confirmButtonText: "Confirmation",
+        cancelButtonText: "cancel",
+        type: "warning",
+      }
+    )
       .then(() => {
         addIdentificationShow.value = true;
       })
@@ -505,6 +528,10 @@ const addIdentification = async (val) => {
       .then(function (response) {
         console.log(response.data);
         addIdentificationShow.value = false;
+        ElMessage({
+          message: response.data.message,
+          type: "success",
+        });
         loadData();
       })
       .catch(function (error) {
@@ -513,27 +540,18 @@ const addIdentification = async (val) => {
       });
   }
 };
+
 const imgKeyList = ref([]);
 const addRecheckShow = ref(false);
-const isAlone = ref(false);
+const isAlone = ref(false); 
 const recheck = (data) => {
   console.log(data);
   isAlone.value = true;
   imgKeyList.value = [data.image_key];
   addRecheckShow.value = true;
 };
+
 const submitRecheck = async (val) => {
-  if (val == 0) {
-    addRecheckShow.value = false;
-    return;
-  }
-
-  if (!unref(imgKeyList).length) {
-    ElMessage.warning("Please select the pictures that you want to recheck.");
-    return;
-  }
-
-  const submitRecheck = async (val) => {
   if (val == 0) {
     addRecheckShow.value = false;
     return;
@@ -547,22 +565,30 @@ const submitRecheck = async (val) => {
     .post(Api.recheck, { image_keys: unref(imgKeyList) })
     .then(function (response) {
       console.log(response.data);
+
+      ElMessage({
+        message: response.data.message,
+        type: "success",
+      });
       addRecheckShow.value = false;
       loadData();
     })
-    .catch(function (error) {});
+    .catch(function (error) {
+      ElMessage({
+        message: error,
+        type: "error",
+      });
+    });
 };
-
-};
-
+//
 const checkRow = (data) => {
   const key = data.image_key;
   const index = imgKeyList.value.indexOf(key);
   index > -1 ? imgKeyList.value.splice(index, 1) : imgKeyList.value.push(key);
   console.log(unref(imgKeyList));
 };
-
-const innerVisible = ref(false); 
+//
+const innerVisible = ref(false); //
 const inspectImg = ref({
   result: {}, //
 });
@@ -574,31 +600,27 @@ const openResult = (data) => {
 };
 const canvasImgRef = ref(null);
 const handleDialogOpen = async () => {
-  
-  await nextTick();
-
-  setTimeout(() => {
-    canvasImgRef.value?.triggerDraw();
-  }, 1000);
+ 
 };
 const handleCloseFabricImg = (done: () => void) => {
   ElMessageBox.confirm("Confirm shutdown?")
     .then(() => {
       done();
     })
-    .catch(() => {
+    .catch((error) => {
       // catch error
+    
     });
 };
-// 
-const isEdit = ref(false); //
+
+const isEdit = ref(false); 
 const editResult = (data) => {
   console.log(data);
   inspectImg.value = data;
   isEdit.value = true;
   innerVisible.value = true;
 };
-// 
+
 const imTestingChange = (val) => {
   console.log(val);
   if (val == 0) {
@@ -611,9 +633,6 @@ onMounted(() => {
     axios
       .get(Api.taskList, {})
       .then(function (response) {
-        
-        console.log(response.data.result);
-
         if (!response.data.result.total) {
           progress.value = 0;
         } else {
@@ -623,7 +642,6 @@ onMounted(() => {
         }
       })
       .catch(function (error) {
-        
         console.error(error);
       });
   }, 5000);
@@ -817,7 +835,6 @@ onUnmounted(() => {
   min-height: 420px;
 }
 
-
 .folder-list-wrap {
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 8px;
@@ -940,7 +957,6 @@ onUnmounted(() => {
     margin-bottom: 0.5rem;
   }
 }
-
 
 .status-tag {
   display: inline-block;
