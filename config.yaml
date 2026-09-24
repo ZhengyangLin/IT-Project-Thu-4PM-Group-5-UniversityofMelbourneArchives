@@ -15,7 +15,6 @@ ocr:
   min_conf: 0.3
   max_long_side: 4000
   paddle_max_side_limit: 0
-  probe_gaps: true
   iou_merge: 0.5
   tesseract_psm_coarse: [6, 11]
   lang: en
@@ -44,7 +43,7 @@ rule:
 llm:
   enabled: true
   base_url: https://www.dmxapi.com/v1
-  api_key_env: OPENAI_API_KEY
+  api_key_env: sk-eK0xpdNC6aKqgzpqvUiSaW0QppgfMG3661mxc4sBukBCh98s
   model: deepseek-v4-flash
   temperature: 0.0
   max_tokens: 200000
@@ -55,18 +54,11 @@ conf:
   w_agreement: 0.18
   w_ocr_conf: 0.18
   w_format: 0.18
-  w_cross_sheet: 0.18
-  w_reread: 0.18
-  w_cluster: 0.1
   w_llm_conf: 0.15
   llm_conf_map: {high: 1.0, medium: 0.7, low: 0.35}
   agreement_after_adjudication: 0.85
   t_high: 0.75
   t_low: 0.45
-  reread_fields:
-    - drawing_number
-    - date
-    - scale
   correction_conf_ceiling: 0.85
 
 debug_viz: true

@@ -6,10 +6,16 @@ on:
       - "feature/**"
       - "Develop"
       - "integration/**"
+      - "main"
+      - "GPU"
 
   pull_request:
     branches:
+      - "integration/**"
       - "Develop"
+      - "main"
+      - "GPU"
+
 
 jobs:
   unit-test:
@@ -27,7 +33,15 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+
+     
+          pip install paddlepaddle-gpu==3.3.1 \
+            -i https://www.paddlepaddle.org.cn/packages/stable/cu126/
+
+    
+          grep -v "^paddlepaddle-gpu" requirements.txt > requirements-ci.txt
+          pip install -r requirements-ci.txt
+
           pip install pytest
 
       - name: Run unit tests
