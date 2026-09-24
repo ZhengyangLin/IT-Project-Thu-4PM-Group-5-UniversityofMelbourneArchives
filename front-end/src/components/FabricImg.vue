@@ -118,6 +118,57 @@ const loadImage = async () => {
   }
 };
 
+
+const bindCanvasEvent = () => {
+  let isLeftDrag = false;
+  canvas!.on("mouse:wheel", (opt) => {
+    const delta = opt.e.deltaY;
+    let zoom = canvas!.getZoom();
+    zoom *= 0.999 ** delta;
+    zoom = Math.max(0.2, Math.min(5, zoom));
+    canvas!.zoomToPoint({ x: opt.e.offsetX, y: opt.e.offsetY }, zoom);
+    opt.e.preventDefault();
+    opt.e.stopPropagation();
+  });
+
+  canvas!.on("mouse:down", (opt) => {
+    const evt = opt.e;
+    if (evt.button === 1) {
+      (canvas as any).isDragging = true;
+      (canvas as any).lastPosX = evt.clientX;
+      (canvas as any).lastPosY = evt.clientY;
+    }
+    if (evt.button === 0 && !opt.target) {
+      isLeftDrag = true;
+      (canvas as any).lastPosX = evt.clientX;
+      (canvas as any).lastPosY = evt.clientY;
+    }
+  });
+
+  canvas!.on("mouse:move", (opt) => {
+    const evt = opt.e;
+    if ((canvas as any).isDragging) {
+      const dx = evt.clientX - (canvas as any).lastPosX;
+      const dy = evt.clientY - (canvas as any).lastPosY;
+      canvas!.relativePan({ x: dx, y: dy });
+      (canvas as any).lastPosX = evt.clientX;
+      (canvas as any).lastPosY = evt.clientY;
+    }
+    if (isLeftDrag) {
+      const dx = evt.clientX - (canvas as any).lastPosX;
+      const dy = evt.clientY - (canvas as any).lastPosY;
+      canvas!.relativePan({ x: dx, y: dy });
+      (canvas as any).lastPosX = evt.clientX;
+      (canvas as any).lastPosY = evt.clientY;
+    }
+  });
+
+  canvas!.on("mouse:up", () => {
+    (canvas as any).isDragging = false;
+    isLeftDrag = false;
+  });
+};
+
 const initCanvas = async () => {
   await nextTick();
   if (!fabricCanvasRef.value || !containerRef.value) await nextTick();
@@ -130,7 +181,7 @@ const initCanvas = async () => {
     selection: false,
     preserveObjectStacking: true,
   });
-  
+  bindCanvasEvent();
   resizeObserver = new ResizeObserver(onContainerResize);
   resizeObserver.observe(containerRef.value);
 };
