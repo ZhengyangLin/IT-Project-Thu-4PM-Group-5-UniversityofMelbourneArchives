@@ -80,9 +80,7 @@
       </div>
     </div>
 
-
     <div class="main-grid">
-
       <div class="panel-card folder-panel">
         <div class="panel-title" @click="clearFilter">
           <el-icon><Folder /></el-icon>
@@ -106,7 +104,6 @@
         </div>
       </div>
 
-     
       <div class="panel-card image-panel">
         <div class="panel-title">
           <el-icon><Document /></el-icon>
@@ -131,12 +128,11 @@
             <div class="col-imgname">Image name</div>
             <div class="col-status">Status</div>
             <div class="col-status">Review status</div>
-         
+
             <div class="col-error">Error message</div>
             <div class="col-update">Operation</div>
           </div>
           <div class="img-box-list" v-if="pageImageList?.length">
-  
             <div class="img-row" v-for="row in pageImageList" :key="row.path">
               <div class="col-select">
                 <el-checkbox
@@ -179,7 +175,7 @@
                   {{ row.manual_reviewed == 0 ? "Pending review" : "Reviewed" }}
                 </span>
               </div>
-     
+
               <div class="col-error text-fail">
                 <el-tooltip
                   class="box-item"
@@ -191,7 +187,6 @@
                 </el-tooltip>
               </div>
               <div class="col-update">
-            
                 <el-button
                   class="btn"
                   type="primary"
@@ -252,7 +247,7 @@
             stroke="#e5e7eb"
             stroke-width="6"
           />
-  
+
           <circle
             class="progress-circle"
             cx="50"
@@ -267,14 +262,13 @@
             transform="rotate(-90 50 50)"
           />
         </svg>
-   
+
         <div class="float-ball">
           <span v-if="progress != 0">{{ progress }}%</span>
           <span v-else>FSID</span>
         </div>
       </div>
     </div>
-
 
     <el-dialog
       v-model="addIdentificationShow"
@@ -325,7 +319,13 @@
         </div>
       </template>
     </el-dialog>
-      <el-dialog v-model="innerVisible" width="100%" title="Test Comparison" @open="handleDialogOpen" :before-close="handleCloseFabricImg">
+    <el-dialog
+      v-model="innerVisible"
+      width="100%"
+      title="Test Comparison"
+      @open="handleDialogOpen"
+      :before-close="handleCloseFabricImg"
+    >
       <!--  -->
       <div>
         <!-- :urlImage="inspectImg.image_url"
@@ -339,7 +339,6 @@
           :conf-threshold="0.01"
           :isEdit="isEdit"
           v-if="innerVisible"
-        
         />
       </div>
     </el-dialog>
@@ -366,7 +365,7 @@ import {
 } from "@element-plus/icons-vue";
 import { ElMessageBox, ElMessage } from "element-plus";
 import axios from "axios";
-import FabricImg from './components/FabricImg.vue';
+import FabricImg from "./components/FabricImg.vue";
 const loading = ref(false);
 enum Api {
   taskList = "http://127.0.0.1:8000/Unimelb/ImageSelect",
@@ -414,10 +413,10 @@ async function loadData() {
       ...from,
     })
     .then(function (response) {
-      // 
+      //
       console.log(response.data);
       pageData.value = response.data.result;
-      
+
       if (!response.data.result.total) {
         progress.value = 0;
       } else {
@@ -429,28 +428,27 @@ async function loadData() {
       loading.value = false;
     })
     .catch(function (error) {
-      
       console.error(error);
     });
 }
 const currentFile = ref("");
-// 
+//
 const openFolder = (data) => {
   currentPage.value = 1;
   currentFile.value = data;
 };
-// 
+//
 const clearFilter = () => {
   console.log("1");
   currentFile.value = "";
 };
-// 
+//
 const statusValue = ref(null);
 const tabStatus = (val) => {
   currentPage.value = 1;
   statusValue.value = val;
 };
-// 
+//
 const filterImageList = computed(() => {
   const all = pageData.value.images || [];
   let list = [...all];
@@ -469,7 +467,7 @@ const filterImageList = computed(() => {
 });
 
 const currentPage = ref(1);
-const pageSize = ref(20); 
+const pageSize = ref(20);
 const pageImageList = computed(() => {
   const start = (currentPage.value - 1) * pageSize.value;
   const end = start + pageSize.value;
@@ -496,7 +494,6 @@ const handleClick = () => {
   addIdentificationBtn();
 };
 var listTimer;
-
 
 const addIdentificationShow = ref(false);
 const force = ref(false);
@@ -543,7 +540,7 @@ const addIdentification = async (val) => {
 
 const imgKeyList = ref([]);
 const addRecheckShow = ref(false);
-const isAlone = ref(false); 
+const isAlone = ref(false);
 const recheck = (data) => {
   console.log(data);
   isAlone.value = true;
@@ -600,7 +597,8 @@ const openResult = (data) => {
 };
 const canvasImgRef = ref(null);
 const handleDialogOpen = async () => {
- 
+  await nextTick();
+ canvasImgRef.value?.triggerDraw();
 };
 const handleCloseFabricImg = (done: () => void) => {
   ElMessageBox.confirm("Confirm shutdown?")
@@ -609,11 +607,10 @@ const handleCloseFabricImg = (done: () => void) => {
     })
     .catch((error) => {
       // catch error
-    
     });
 };
 
-const isEdit = ref(false); 
+const isEdit = ref(false);
 const editResult = (data) => {
   console.log(data);
   inspectImg.value = data;
@@ -864,7 +861,6 @@ onUnmounted(() => {
   text-align: right;
 }
 
-
 .img-list-wrap {
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 8px;
@@ -998,7 +994,6 @@ onUnmounted(() => {
   color: #aeb7c2;
 }
 
-
 @media (max-width: 1400px) {
   .stat-overview {
     grid-template-columns: repeat(3, 1fr);
@@ -1018,7 +1013,6 @@ onUnmounted(() => {
     grid-template-columns: repeat(2, 1fr);
   }
 }
-
 
 .add-identification {
   .float-ball-wrap {
