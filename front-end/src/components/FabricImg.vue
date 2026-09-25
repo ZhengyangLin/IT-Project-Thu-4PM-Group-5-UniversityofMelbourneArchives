@@ -14,17 +14,50 @@
         </div>
       </div>
     </div>
+
+    <div class="compare-col right-col">
+      <div class="col-label">Annotation information</div>
+      <div class="list-message">
+        <div
+          class="item"
+          v-for="(item, fieldKey) in detecBoxEntries"
+          :key="fieldKey"
+          v-show="fieldNameMap[item.fieldKey] != 'Drawing type'"
+        >
+          <div class="field-name">{{ fieldNameMap[item.fieldKey] || fieldKey }}</div>
+          <div class="field-value">Final value:{{ item.value ?? "-" }}</div>
+          <div class="field-meta">
+            <div class="conf">Confidence:{{ (item.confidence * 100).toFixed(1) }}%</div>
+            <div class="conf">Original text of OCR evidence:{{ item.verbatim }}</div>
+            <div class="conf">The normalized or corrected value of the original text:{{ item.corrected }}</div>
+            <div class="conf">Field source: {{ item.source }}</div>
+            <span
+              class="status-tag"
+              :class="{
+                'tag-accept': item.review_status === 'auto_accept',
+                'tag-review': item.review_status === 'needs_review',
+              }"
+            >
+              {{ item.review_status }}
+            </span>
+          </div>
+        </div>
+        <div v-if="detecBoxEntries.length === 0" class="empty-item">No labeled data available.</div>
+      </div>
+    </div>
   </div>
 </template>
-
 <script setup lang="ts">
-import { ref, watch, nextTick, onUnmounted } from "vue";
+import { ref, watch, nextTick, onUnmounted, computed } from "vue";
 import { Warning } from "@element-plus/icons-vue";
 import { Canvas, FabricImage } from "fabric";
+
 
 const props = defineProps({
   urlImage: String,
   thumbUrlImage: { type: String, default: "" },
+  detecBoxs: { type: Object, default: () => {} },
+  confThreshold: { type: Number, default: 0.3 },
 });
 
 const fabricCanvasRef = ref(null);
@@ -118,7 +151,6 @@ const loadImage = async () => {
   }
 };
 
-
 const bindCanvasEvent = () => {
   let isLeftDrag = false;
   canvas!.on("mouse:wheel", (opt) => {
@@ -186,6 +218,23 @@ const initCanvas = async () => {
   resizeObserver.observe(containerRef.value);
 };
 
+
+const fieldNameMap = {
+  drawing_number: "Drawing number",
+  project_name: "Name of project",
+  drawing_title: "Name of drawing",
+  architect: "Architect",
+  draughtsperson: "Draughtsperson",
+  date: "Date",
+  scale: "Scale",
+  drawing_type: "Drawing type",
+};
+
+const detecBoxEntries = computed(() => {
+  if (!props.detecBoxs) return [];
+  return Object.entries(props.detecBoxs).map(([k, v]) => ({ fieldKey: k, ...v }));
+});
+
 watch(
   () => [props.urlImage, props.thumbUrlImage],
   () => loadImage(),
@@ -204,7 +253,7 @@ onUnmounted(() => {
 <style scoped lang="less">
 .compare-root {
   display: grid;
-  grid-template-columns: 3fr;
+  grid-template-columns: 3fr 1fr;
   gap: 12px;
   width: 100%;
   align-items: stretch;
@@ -216,7 +265,8 @@ onUnmounted(() => {
   border-radius: 6px;
   min-height: 420px;
 }
-.left-col {
+.left-col,
+.right-col {
   overflow: hidden;
 }
 .col-label {
@@ -264,5 +314,53 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   z-index: 10;
+}
+.list-message {
+  overflow-y: auto;
+  padding: 8px;
+  height: calc(60vh - 40px);
+  .item {
+    border: 1px solid #e4e7ed;
+    border-radius: 6px;
+    padding: 10px;
+    margin-bottom: 8px;
+  }
+  .field-name {
+    font-weight: 600;
+    font-size: 13px;
+    color: #303133;
+    margin-bottom: 4px;
+  }
+  .field-value {
+    font-size: 12px;
+    color: #606266;
+    word-break: break-all;
+    margin-bottom: 6px;
+  }
+  .field-meta {
+    font-size: 11px;
+    .conf {
+      color: #909399;
+      display: block;
+      margin: 2px 0;
+    }
+  }
+  .status-tag {
+    padding: 1px 6px;
+    border-radius: 3px;
+  }
+  .tag-accept {
+    background: rgba(103, 194, 58, 0.15);
+    color: #67c23a;
+  }
+  .tag-review {
+    background: rgba(230, 162, 60, 0.15);
+    color: #e6a23c;
+  }
+  .empty-item {
+    text-align: center;
+    padding: 24px;
+    color: #909399;
+  }
 }
 </style>
