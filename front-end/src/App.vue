@@ -150,10 +150,7 @@
                   :preview-src-list="[row.image_url]"
                   lazy
                 /> -->
-                <!-- <span v-else>-</span>
 
-                <img :src="row.image_url" alt="" /> -->
-                <!-- {{ row.image_url }} -->
               </div>
               <div class="col-folder">{{ row.folder }}</div>
               <div class="col-nodeid">{{ row.node_id }}</div>
@@ -321,15 +318,12 @@
     </el-dialog>
     <el-dialog
       v-model="innerVisible"
-      width="100%"
+      width="90%"
       title="Test Comparison"
       @open="handleDialogOpen"
       :before-close="handleCloseFabricImg"
     >
-      <!--  -->
       <div>
-        <!-- :urlImage="inspectImg.image_url"
-          :thumb-url-image="inspectImg.image_url" -->
         <FabricImg
           ref="canvasImgRef"
           :urlImage="inspectImg.image_url"
@@ -520,11 +514,12 @@ const addIdentification = async (val) => {
   if (val == 0) {
     addIdentificationShow.value = false;
   } else {
+    addIdentificationShow.value = false;
     axios
       .post(Api.createTask, { force: unref(force) })
       .then(function (response) {
         console.log(response.data);
-        addIdentificationShow.value = false;
+
         ElMessage({
           message: response.data.message,
           type: "success",
@@ -558,16 +553,16 @@ const submitRecheck = async (val) => {
     ElMessage.warning("Please select the pictures that you want to recheck.");
     return;
   }
+  addRecheckShow.value = false;
   axios
     .post(Api.recheck, { image_keys: unref(imgKeyList) })
     .then(function (response) {
       console.log(response.data);
-
       ElMessage({
         message: response.data.message,
         type: "success",
       });
-      addRecheckShow.value = false;
+
       loadData();
     })
     .catch(function (error) {
@@ -598,7 +593,7 @@ const openResult = (data) => {
 const canvasImgRef = ref(null);
 const handleDialogOpen = async () => {
   await nextTick();
- canvasImgRef.value?.triggerDraw();
+  canvasImgRef.value?.triggerDraw();
 };
 const handleCloseFabricImg = (done: () => void) => {
   ElMessageBox.confirm("Confirm shutdown?")
@@ -651,7 +646,7 @@ onUnmounted(() => {
 <style scoped lang="less">
 .image-task-page {
   position: relative;
-  min-height: 100%;
+  // min-height: 100%;
   // padding: 24px;
   color: #fff;
   font-size: 14px;
@@ -876,8 +871,9 @@ onUnmounted(() => {
   }
 }
 .img-box-list {
-  height: calc(100vh - 400px);
+  height: calc(100vh - 450px);
   overflow-y: auto;
+  min-height: 400px;
 }
 .img-row {
   display: flex;
