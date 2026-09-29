@@ -27,32 +27,37 @@
       <div class="list-message">
         <div
           class="item"
-          v-for="(item, fieldKey) in detecBoxEntries"
-          :key="fieldKey"
-          :class="{ active: activeFieldKey === fieldKey }"
-          @click="handleClickItem(fieldKey, item)"
-          v-show="fieldNameMap[item.fieldKey] != 'Drawing type'"
+          v-for="item in detecBoxEntries"
+          :key="item.fieldKey"
+          :class="{ active: activeFieldKey === item.fieldKey }"
+          @click="handleClickItem(item.fieldKey, item)"
         >
-          <!-- {{item}} -->
-          <!-- <div class="field-name">{{ fieldKey }}</div> -->
           <div class="field-name">
-            {{ fieldNameMap[item.fieldKey] || fieldKey }}
+            {{ fieldNameMap[item.fieldKey] || item.fieldKey }}
           </div>
-          <div class="field-value" :title="item.value">
-            <span v-if="!isEdit"> Final value:{{ item.value ?? "-" }}</span>
-            
-            <span v-else>
+          <div class="field-value" :title="String(item.value ?? '')">
+            <span
+              v-if="
+                isEdit &&
+                (fieldNameMap[item.fieldKey] || item.fieldKey) ===
+                  'Figure number'
+              "
+            >
               Final value:
               <el-input
-                v-model="localDetecBoxs[item.fieldKey].value"
+                :model-value="getFieldValue(item.fieldKey)"
+                @update:model-value="onFieldInput(item.fieldKey)"
                 placeholder=""
                 size="small"
               />
             </span>
+            <span v-else :style="item.value ? '' : 'color:red'">
+              Final value:{{ item.value ?? "-" }}</span
+            >
           </div>
           <div class="field-meta">
             <div class="conf">
-              Confidence:{{ (item.confidence * 100).toFixed(1) }}%
+              Confidence:{{ formatConfidence(item.confidence) }}
             </div>
             <div class="conf">
               Original text of OCR evidence:{{ item.verbatim }}
@@ -80,9 +85,10 @@
               :class="{
                 'tag-accept': item.review_status === 'auto_accept',
                 'tag-review': item.review_status === 'needs_review',
+                'tag-red': !item.value,
               }"
             >
-              {{ item.review_status }}
+              {{ item.value ? item.review_status : "No data was found" }}
             </span>
           </div>
         </div>
@@ -94,189 +100,162 @@
   </div>
 </template>
 
-<script setup lang='ts'>
+<script setup lang="ts">
 import { ref, watch, nextTick, onUnmounted, computed, unref } from "vue";
 import { Warning } from "@element-plus/icons-vue";
-import { Canvas, FabricImage, Rect, FabricText } from "fabric";
+import { Canvas, FabricImage, Rect, FabricText, Point } from "fabric";
+import type { FabricObject } from "fabric";
 import { ElMessageBox, ElMessage } from "element-plus";
 import axios from "axios";
-const props = defineProps({
-  urlImage: String,
-  thumbUrlImage: { type: String, default: "" },
-  detecBoxs: { type: Object, default: () => {} },
-  image_key: { type: String, default: "" },
-  confThreshold: { type: Number, default: 0.3 },
-  isEdit: {
-    type: Boolean,
-    default: false,
-  },
-});
+interface TokenBBox {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+
+interface DetecBoxItem {
+  tokens_bbox?: TokenBBox;
+  confidence?: number;
+  value?: string | number | null;
+  verbatim?: string;
+  corrected?: string;
+  correction_basis?: string;
+  source?: string;
+  reason?: string;
+  notes?: string;
+  review_status?: string;
+}
+type DetecBoxMap = Record<string, DetecBoxItem>;
+type DetecBoxEntry = DetecBoxItem & { fieldKey: string };
+interface NormalizedBox extends DetecBoxItem {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  label?: string | number | null;
+  conf?: number;
+  tokens_bbox?: TokenBBox;
+}
+type BoxRect = Rect & {
+  boxData?: NormalizedBox;
+  labelObj?: FabricText;
+  labelBg?: Rect;
+  _originStroke?: string;
+  _originStrokeWidth?: number;
+};
+const props = withDefaults(
+  defineProps<{
+    urlImage?: string;
+    thumbUrlImage?: string;
+    detecBoxs?: DetecBoxMap;
+    image_key?: string;
+    confThreshold?: number;
+    isEdit?: boolean;
+  }>(),
+  {
+    urlImage: undefined,
+    thumbUrlImage: "",
+    detecBoxs: () => ({}),
+    image_key: "",
+    confThreshold: 0.3,
+    isEdit: false,
+  }
+);
 enum Api {
   manualReview = "http://127.0.0.1:8000/Unimelb/ocr-results/manual-review",
 }
-const emit = defineEmits(["box-change", "fabricImgChange"]);
-const fabricCanvasRef = ref(null);
-const containerRef = ref(null);
-let canvas = null;
-let bgImage = null;
+const fabricCanvasRef = ref<HTMLCanvasElement | null>(null);
+const containerRef = ref<HTMLDivElement | null>(null);
+let canvas: Canvas | null = null;
+let bgImage: FabricImage | null = null;
 let originScale = 1;
-let resizeObserver = null;
-let resizeTimer = null;
-const mode = ref("view");
-let drawStart = null;
-let tempRect = null;
+let resizeObserver: ResizeObserver | null = null;
+let resizeTimer: ReturnType<typeof setTimeout> | null = null;
 let loadingLock = false;
-const isLoading = ref(false);
-const loadError = ref(false);
+const isLoading = ref<boolean>(false);
+const loadError = ref<boolean>(false);
 
-const localDetecBoxs = ref({});
+const localDetecBoxs = ref<DetecBoxMap>({});
 const getDrawUrl = () => props.thumbUrlImage || props.urlImage;
-console.log(getDrawUrl);
+const getBoxRects = (cv: Canvas): BoxRect[] =>
+  (cv.getObjects("rect") as FabricObject[]).filter(
+    (o) => (o as BoxRect).boxData
+  ) as unknown as BoxRect[];
 
-const debounce = (fn, delay = 120) => {
-  return (...args) => {
-    clearTimeout(resizeTimer);
+const debounce = (fn: (...args: any[]) => void, delay = 120) => {
+  return (...args: any[]) => {
+    if (resizeTimer) clearTimeout(resizeTimer);
     resizeTimer = setTimeout(() => fn(...args), delay);
   };
 };
 
-function createBoxLabel(textStr, rect) {
-  const labelText = new FabricText(textStr, {
-    left: rect.left + 0,
-    top: rect.top + 10,
-    fontSize: 5,
-    fill: "#f53f3f",
-    originX: "left",
-    originY: "top",
-    selectable: false,
-    evented: false,
-  });
-  canvas.add(labelText);
-  const textW = labelText.width;
-  const textH = labelText.height;
-  canvas.remove(labelText);
-  const labelBg = new Rect({
-    originX: "left",
-    originY: "top",
-    width: textW,
-    height: textH,
-    fill: "rgba(255, 255, 255, 0.75)",
-    selectable: false,
-    evented: false,
-    //  width: 100, height: 100, fill: 'orange',
-  });
-  rect.labelObj = labelText;
-  rect.labelBg = labelBg;
-  return { labelText, labelBg };
-}
-
-function syncLabelPosition(rect) {
+function syncLabelPosition(rect: BoxRect) {
   if (!rect.labelObj || !rect.labelBg) return;
   const txt = rect.labelObj;
   const bg = rect.labelBg;
   txt.set({
-    left: rect.left + 4,
-    top: rect.top - 5,
+    left: (rect.left ?? 0) + 4,
+    top: (rect.top ?? 0) - 5,
   });
   txt.setCoords();
   bg.set({
-    left: txt.left - 2,
-    top: txt.top - 2,
-    width: txt.width + 4,
-    height: txt.height + 1,
+    left: (txt.left ?? 0) - 2,
+    top: (txt.top ?? 0) - 2,
+    width: (txt.width ?? 0) + 4,
+    height: (txt.height ?? 0) + 1,
   });
   bg.setCoords();
 }
 
-const onContainerResize = debounce(async () => {
-  if (!canvas || !bgImage || !containerRef.value) return;
-  const cw = containerRef.value.clientWidth - 20;
-  const ch = containerRef.value.clientHeight - 20;
+const onContainerResize = debounce(() => {
+  const cv = canvas;
+  const img = bgImage;
+  const container = containerRef.value;
+  if (!cv || !img || !container) return;
+
+  const cw = container.clientWidth - 20;
+  const ch = container.clientHeight - 20;
   if (cw < 10 || ch < 10) return;
+  cv.setDimensions({ width: cw, height: ch });
 
-  canvas.setDimensions({ width: cw, height: ch });
-  const originW = bgImage.width;
-  const originH = bgImage.height;
+  const originW = img.width;
+  const originH = img.height;
   originScale = Math.min(cw / originW, ch / originH, 1);
-
   const dispW = originW * originScale;
   const dispH = originH * originScale;
-  console.log(
-    containerRef.value.clientWidth,
-    containerRef.value.clientHeight,
-    originW,
-    originH,
-    dispW
-  );
-  bgImage.set({
+
+  img.set({
     scaleX: originScale,
     scaleY: originScale,
     left: (cw - dispW) / 2,
     top: (ch - dispH) / 2,
   });
 
-  const rects = canvas.getObjects("rect").filter((o) => o.boxData);
+  const rects = getBoxRects(cv);
   rects.forEach((rect) => {
-    const { x1, y1, x2, y2 } = rect.boxData;
-    const rx1 = x1 * originScale;
-    const ry1 = y1 * originScale;
-    const rx2 = x2 * originScale;
-    const ry2 = y2 * originScale;
+    const bd = rect.boxData;
+    if (!bd) return;
+    const imgLeft = (img.left as number) ?? 0;
+    const imgTop = (img.top as number) ?? 0;
+    const rx1 = bd.x1 * originScale;
+    const ry1 = bd.y1 * originScale;
+    const rx2 = bd.x2 * originScale;
+    const ry2 = bd.y2 * originScale;
     rect.set({
-      left: bgImage.left + rx1,
-      top: bgImage.top + ry1,
+      left: imgLeft + rx1,
+      top: imgTop + ry1,
       width: rx2 - rx1,
       height: ry2 - ry1,
     });
     rect.setCoords();
     syncLabelPosition(rect);
   });
-  canvas.renderAll();
+  cv.renderAll();
 });
-
-const normalizeBox = (box) => {
-  let x1, y1, x2, y2;
-  if (
-    box.x1 !== undefined &&
-    box.y1 !== undefined &&
-    box.x2 !== undefined &&
-    box.y2 !== undefined
-  ) {
-    x1 = box.x1;
-    y1 = box.y1;
-    x2 = box.x2;
-    y2 = box.y2;
-  } else if (
-    box.x !== undefined &&
-    box.y !== undefined &&
-    box.w !== undefined &&
-    box.h !== undefined
-  ) {
-    x1 = box.x;
-    y1 = box.y;
-    x2 = box.x + box.w;
-    y2 = box.y + box.h;
-  } else if (
-    box.left !== undefined &&
-    box.top !== undefined &&
-    box.width !== undefined &&
-    box.height !== undefined
-  ) {
-    x1 = box.left;
-    y1 = box.top;
-    x2 = box.left + box.width;
-    y2 = box.top + box.height;
-  } else {
-    return null;
-  }
-  if (x1 > x2) [x1, x2] = [x2, x1];
-  if (y1 > y2) [y1, y2] = [y2, y1];
-  return { ...box, x1, y1, x2, y2 };
-};
 
 const loadImageAndBox = async () => {
   const url = getDrawUrl();
-  console.log(url);
   if (!url || loadingLock) return;
   isLoading.value = true;
   loadError.value = false;
@@ -286,27 +265,25 @@ const loadImageAndBox = async () => {
       await initCanvas();
       if (!canvas) throw new Error("Canvas initialization failed");
     }
-    canvas.clear();
+    const cv = canvas;
+    cv.clear();
     const res = await fetch(url);
     if (!res.ok) throw new Error(`Request Exception status:${res.status}`);
     const blob = await res.blob();
     const blobUrl = URL.createObjectURL(blob);
     const img = await FabricImage.fromURL(blobUrl);
     URL.revokeObjectURL(blobUrl);
-
     bgImage = img;
-    // console.log(bgImage);
+
     const originW = img.width;
     const originH = img.height;
     const containerDom = containerRef.value;
-    const cw = containerDom?.clientWidth - 20 ?? 700;
-    const ch = containerDom?.clientHeight - 20 ?? 500;
-
+    const cw = (containerDom?.clientWidth ?? 720) - 20;
+    const ch = (containerDom?.clientHeight ?? 520) - 20;
     originScale = Math.min(cw / originW, ch / originH, 1);
     const dispW = originW * originScale;
     const dispH = originH * originScale;
-
-    canvas.setDimensions({ width: cw, height: ch });
+    cv.setDimensions({ width: cw, height: ch });
     img.set({
       selectable: false,
       evented: false,
@@ -317,29 +294,23 @@ const loadImageAndBox = async () => {
       left: (cw - dispW) / 2,
       top: (ch - dispH) / 2,
     });
-    canvas.add(img);
+    cv.add(img);
 
-    const boxItems = Object.values(props.detecBoxs || {});
+    const boxItems: DetecBoxItem[] = Object.values(props.detecBoxs || {});
     boxItems.forEach((item) => {
-      //
       if (!item?.tokens_bbox) return;
       const { x0, y0, x1, y1 } = item.tokens_bbox;
-      //
       const conf = item.confidence ?? 1;
       if (conf !== undefined && conf < props.confThreshold) return;
-
-      //
-      const normalized = {
+      const normalized: NormalizedBox = {
         ...item,
         x1: x0,
         y1: y0,
         x2: x1,
         y2: y1,
-        label: item.value, //
+        label: item.value,
         conf: conf,
       };
-
-      //
       if (normalized.x1 === normalized.x2 || normalized.y1 === normalized.y2)
         return;
 
@@ -351,8 +322,8 @@ const loadImageAndBox = async () => {
       const rect = new Rect({
         originY: "top",
         originX: "left",
-        left: img.left + rx1,
-        top: img.top + ry1 + 0.2,
+        left: (img.left as number) + rx1,
+        top: (img.top as number) + ry1 + 0.2,
         width: rx2 - rx1,
         height: ry2 - ry1,
         stroke: "#f53f3f",
@@ -361,23 +332,21 @@ const loadImageAndBox = async () => {
         strokeUniform: true,
         selectable: true,
         evented: true,
-        //
         lockMovementX: true,
         lockMovementY: true,
         lockScalingX: true,
         lockScalingY: true,
-        hasControls: false, //
-        hasBorders: false, //
-      });
+        hasControls: false,
+        hasBorders: false,
+      }) as unknown as BoxRect;
+
       rect.boxData = normalized;
       rect.setCoords();
-      canvas.add(rect);
-
-      if (normalized.label != null) {
-      }
+      cv.add(rect);
     });
-    canvas.renderAll();
+    cv.renderAll();
   } catch (err) {
+    console.error(err);
     loadError.value = true;
   } finally {
     isLoading.value = false;
@@ -394,101 +363,77 @@ const initCanvas = async () => {
   const cw = containerRef.value.clientWidth - 20 || 700;
   const ch = containerRef.value.clientHeight - 20 || 500;
 
-  canvas = new Canvas(fabricCanvasRef.value, {
+  const cv = new Canvas(fabricCanvasRef.value, {
     width: cw,
     height: ch,
     selection: false,
     preserveObjectStacking: true,
   });
-  bindCanvasEvent();
+  canvas = cv;
+  bindCanvasEvent(cv);
   resizeObserver = new ResizeObserver(onContainerResize);
   resizeObserver.observe(containerRef.value);
 };
 
-const bindCanvasEvent = () => {
+const bindCanvasEvent = (cv: Canvas) => {
   let isLeftDrag = false;
-  canvas.on("mouse:wheel", (opt) => {
-    const delta = opt.e.deltaY;
-    let zoom = canvas.getZoom();
+  let isPanning = false;
+  let lastPosX = 0;
+  let lastPosY = 0;
+
+  cv.on("mouse:wheel", (opt) => {
+    const evt = opt.e as WheelEvent;
+    const delta = evt.deltaY;
+    let zoom = cv.getZoom();
     zoom *= 0.999 ** delta;
     zoom = Math.max(0.2, Math.min(5, zoom));
-    canvas.zoomToPoint({ x: opt.e.offsetX, y: opt.e.offsetY }, zoom);
-    opt.e.preventDefault();
-    opt.e.stopPropagation();
+    cv.zoomToPoint(new Point(evt.offsetX, evt.offsetY), zoom);
+    evt.preventDefault();
+    evt.stopPropagation();
   });
 
-  canvas.on("mouse:down", (opt) => {
-    const evt = opt.e;
+  cv.on("mouse:down", (opt) => {
+    const evt = opt.e as MouseEvent;
 
     if (evt.button === 1) {
-      canvas.isDragging = true;
-      canvas.lastPosX = evt.clientX;
-      canvas.lastPosY = evt.clientY;
+      isPanning = true;
+      lastPosX = evt.clientX;
+      lastPosY = evt.clientY;
     }
 
     if (evt.button === 0 && !opt.target) {
       isLeftDrag = true;
-      canvas.lastPosX = evt.clientX;
-      canvas.lastPosY = evt.clientY;
+      lastPosX = evt.clientX;
+      lastPosY = evt.clientY;
     }
   });
 
-  canvas.on("mouse:move", (opt) => {
-    const evt = opt.e;
+  cv.on("mouse:move", (opt) => {
+    const evt = opt.e as MouseEvent;
 
-    if (canvas.isDragging) {
-      const dx = evt.clientX - canvas.lastPosX;
-      const dy = evt.clientY - canvas.lastPosY;
-      canvas.relativePan({ x: dx, y: dy });
-      canvas.lastPosX = evt.clientX;
-      canvas.lastPosY = evt.clientY;
-    }
-    if (isLeftDrag) {
-      const dx = evt.clientX - canvas.lastPosX;
-      const dy = evt.clientY - canvas.lastPosY;
-      canvas.relativePan({ x: dx, y: dy });
-      canvas.lastPosX = evt.clientX;
-      canvas.lastPosY = evt.clientY;
+    if (isPanning || isLeftDrag) {
+      const dx = evt.clientX - lastPosX;
+      const dy = evt.clientY - lastPosY;
+      cv.relativePan(new Point(dx, dy));
+      lastPosX = evt.clientX;
+      lastPosY = evt.clientY;
     }
   });
 
-  canvas.on("mouse:up", () => {
-    canvas.isDragging = false;
+  cv.on("mouse:up", () => {
+    isPanning = false;
     isLeftDrag = false;
   });
 
-  canvas.on("object:removed", (e) => {
-    const obj = e.target;
-    if (obj.labelObj) canvas.remove(obj.labelObj);
-    if (obj.labelBg) canvas.remove(obj.labelBg);
+  cv.on("object:removed", (e) => {
+    const obj = e.target as BoxRect | undefined;
+    if (!obj) return;
+    if (obj.labelObj) cv.remove(obj.labelObj);
+    if (obj.labelBg) cv.remove(obj.labelBg);
   });
 };
-const getBoxList = () => {
-  return canvas
-    .getObjects("rect")
-    .filter((item) => item.boxData)
-    .map((item) => item.boxData);
-};
 
-const handleGetAllBox = () => {
-  const list = getBoxList();
-
-  alert(JSON.stringify(list, null, 2));
-};
-
-const resetZoom = () => {
-  if (!canvas) return;
-  canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
-};
-
-const clearSelect = () => {
-  const active = canvas.getActiveObject();
-  if (active) {
-    canvas.remove(active);
-    emit("box-change", getBoxList());
-  }
-};
-const fieldNameMap = {
+const fieldNameMap: Record<string, string> = {
   drawing_number: "Drawing number",
   project_name: "Name of project",
   drawing_title: "Name of drawing",
@@ -498,9 +443,10 @@ const fieldNameMap = {
   scale: "Scale",
   drawing_type: "Drawing type",
 };
-const activeFieldKey = ref(null);
 
-const detecBoxEntries = computed(() => {
+const activeFieldKey = ref<string | null>(null);
+
+const detecBoxEntries = computed<DetecBoxEntry[]>(() => {
   if (!props.detecBoxs) return [];
   return Object.entries(props.detecBoxs).map(([k, v]) => ({
     fieldKey: k,
@@ -508,7 +454,26 @@ const detecBoxEntries = computed(() => {
   }));
 });
 
-const handleClickItem = (fieldKey, item) => {
+const formatConfidence = (conf?: number) =>
+  `${((conf ?? 0) * 100).toFixed(1)}%`;
+
+const getFieldValue = (fieldKey: string): string => {
+  const val = localDetecBoxs.value[fieldKey]?.value;
+  return val === null || val === undefined ? "" : String(val);
+};
+
+const setFieldValue = (fieldKey: string, val: string | number) => {
+  const item = localDetecBoxs.value[fieldKey];
+  if (!item) return;
+  item.value = val;
+};
+const onFieldInput = (fieldKey: string) => {
+  return (val: string | number | null) => {
+    setFieldValue(fieldKey, val ?? "");
+  };
+};
+
+const handleClickItem = (fieldKey: string, item: DetecBoxEntry) => {
   if (activeFieldKey.value === fieldKey) {
     resetAllBoxHighlight();
     activeFieldKey.value = null;
@@ -520,8 +485,10 @@ const handleClickItem = (fieldKey, item) => {
   if (!item.tokens_bbox) return;
 
   const { x0, y0, x1, y1 } = item.tokens_bbox;
+  const cv = canvas;
+  if (!cv) return;
 
-  const targetRect = canvas?.getObjects("rect")?.find((rect) => {
+  const targetRect = getBoxRects(cv).find((rect) => {
     const bd = rect.boxData;
     if (!bd || !bd.tokens_bbox) return false;
     return (
@@ -533,33 +500,34 @@ const handleClickItem = (fieldKey, item) => {
   });
 
   if (targetRect) {
-    targetRect._originStroke = targetRect.stroke;
+    targetRect._originStroke = targetRect.stroke as string;
     targetRect._originStrokeWidth = targetRect.strokeWidth;
     targetRect.set({
       stroke: "#ffc107",
       strokeWidth: 1,
     });
-    canvas.renderAll();
+    cv.renderAll();
   }
 };
+
 const resetAllBoxHighlight = () => {
-  if (!canvas) return;
-  const rects = canvas.getObjects("rect").filter((o) => o.boxData);
+  const cv = canvas;
+  if (!cv) return;
+  const rects = getBoxRects(cv);
   rects.forEach((rect) => {
     if (rect._originStroke !== undefined) {
       rect.set({
         stroke: rect._originStroke,
         strokeWidth: rect._originStrokeWidth,
       });
-
       delete rect._originStroke;
       delete rect._originStrokeWidth;
     }
   });
-  canvas.renderAll();
+  cv.renderAll();
 };
+
 const submit = () => {
-  console.log(props.image_key, localDetecBoxs.value);
   ElMessageBox.confirm("Whether to confirm the audit?", "Warning", {
     confirmButtonText: "Confirmation",
     cancelButtonText: "cancel",
@@ -576,21 +544,35 @@ const submit = () => {
             message: response.data.message,
             type: "success",
           });
-          emit("fabricImgChange", 0);
         })
-        .catch(function (error) {});
+        .catch(function (error) {
+          const isNetworkErr = error.message === "Network Error";
+          if (isNetworkErr) {
+            ElMessage({
+              message:
+                "The backend service connection failed. Please check if the service is started and if the network is connected.",
+              type: "error",
+            });
+          } else {
+            ElMessage({
+              message:
+                "Query of task status failed:" +
+                (error.message || "Unknown error"),
+              type: "error",
+            });
+          }
+        });
     })
     .catch(() => {});
 };
 
-const formatSubmitPayload = (localBoxObj) => {
-  const submitResult = {};
+const formatSubmitPayload = (localBoxObj: DetecBoxMap) => {
+  const submitResult: Record<string, string | number | null> = {};
   Object.entries(localBoxObj).forEach(([fieldKey, itemObj]) => {
     submitResult[fieldKey] = itemObj?.value ?? null;
   });
   return { result: submitResult };
 };
-
 
 watch(
   () => [props.urlImage, props.thumbUrlImage],
@@ -601,8 +583,7 @@ watch(
 watch(
   () => props.detecBoxs,
   (val) => {
-    localDetecBoxs.value = JSON.parse(JSON.stringify(val || {}));
-    console.log(unref(localDetecBoxs));
+    localDetecBoxs.value = JSON.parse(JSON.stringify(val || {})) as DetecBoxMap;
     activeFieldKey.value = null;
     resetAllBoxHighlight();
     loadImageAndBox();
@@ -610,14 +591,12 @@ watch(
   { deep: true, immediate: true }
 );
 
-
 defineExpose({
   triggerDraw: loadImageAndBox,
-  getAllBoxes: getBoxList,
 });
 
 onUnmounted(() => {
-  clearTimeout(resizeTimer);
+  if (resizeTimer) clearTimeout(resizeTimer);
   if (resizeObserver) resizeObserver.disconnect();
   canvas?.dispose();
 });
@@ -698,11 +677,9 @@ onUnmounted(() => {
 }
 
 .list-message {
-  // flex: 1;
   overflow-y: auto;
   padding: 8px;
   height: calc(60vh - 40px);
-  overflow-y: auto;
   .item {
     border: 1px solid #e4e7ed;
     border-radius: 6px;
@@ -733,8 +710,6 @@ onUnmounted(() => {
     overflow: hidden;
   }
   .field-meta {
-    // display: flex;
-    // justify-content: space-between;
     font-size: 11px;
     flex-wrap: wrap;
     span {
@@ -755,6 +730,10 @@ onUnmounted(() => {
   .tag-review {
     background: rgba(230, 162, 60, 0.15);
     color: #e6a23c;
+  }
+  .tag-red {
+    background: rgba(230, 162, 60, 0.15);
+    color: #e41515;
   }
   .empty-item {
     text-align: center;
