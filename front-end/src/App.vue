@@ -379,7 +379,8 @@ enum Api {
   taskList = "http://127.0.0.1:8000/Unimelb/ImageSelect",
   createTask = "http://127.0.0.1:8000/Unimelb/ocr-tasks",
   recheck = "http://127.0.0.1:8000/Unimelb/ocr-tasks/rerun",
-  manualReview = "http://127.0.0.1:8000/Unimelb/ocr-results/manual-review", 
+  manualReview = "http://127.0.0.1:8000/Unimelb/ocr-results/manual-review",
+  exportData = "http://127.0.0.1:8000/Unimelb/ocr-results/export",
 }
 
 const pageData = ref<PageData>({
