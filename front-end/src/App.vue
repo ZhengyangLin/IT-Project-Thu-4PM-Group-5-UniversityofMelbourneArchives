@@ -108,15 +108,23 @@
         <div class="panel-title">
           <el-icon><Document /></el-icon>
           Image task list
-
-          <el-button
-            class="btn"
-            type="primary"
-            style="margin-left: auto"
-            :icon="Refresh"
-            @click="submitRecheck(1)"
-            >Batch recheck</el-button
-          >
+          <div style="margin-left: auto">
+            <el-button
+              class="btn"
+              type="primary"
+              :icon="Refresh"
+              @click="submitRecheck(1)"
+              >Batch recheck</el-button
+            >
+            <el-button
+              class="btn"
+              type="success"
+              :icon="Download"
+              @click="exportDataXls"
+            >
+              Export</el-button
+            >
+          </div>
         </div>
 
         <div class="img-list-wrap">
@@ -133,7 +141,11 @@
             <div class="col-update">Operation</div>
           </div>
           <div class="img-box-list" v-if="pageImageList?.length">
-            <div class="img-row" v-for="row in pageImageList" :key="row.path">
+            <div
+              class="img-row"
+              v-for="row in pageImageList"
+              :key="row.node_id"
+            >
               <div class="col-select">
                 <el-checkbox
                   :model-value="imgKeyList.includes(row.image_key)"
@@ -142,19 +154,10 @@
                   size="small"
                 />
               </div>
-              <div class="col-preview">
-                <!-- <el-image
-                  :src="row.image_url"
-                  fit="cover"
-                  style="width: 80px; height: 60px; border-radius: 8px"
-                  :preview-src-list="[row.image_url]"
-                  lazy
-                /> -->
-
-              </div>
+              <div class="col-preview"></div>
               <div class="col-folder">{{ row.folder }}</div>
               <div class="col-nodeid">{{ row.node_id }}</div>
-              <div class="col-imgname" title="{{ row.image_name }}">
+              <div class="col-imgname" :title="row.image_name">
                 {{ row.image_name }}
               </div>
               <div class="col-status">
@@ -186,15 +189,6 @@
               <div class="col-update">
                 <el-button
                   class="btn"
-                  type="primary"
-                  size="small"
-                  v-show="row.status == 2"
-                  @click="openResult(row)"
-                  :icon="View"
-                  >Test results</el-button
-                >
-                <el-button
-                  class="btn"
                   type="success"
                   size="small"
                   v-show="row.status == 2"
@@ -207,7 +201,8 @@
                   type="warning"
                   size="small"
                   :icon="Aim"
-                  @click="recheck(row)"
+                  @click="recheckData(row)"
+                  v-if="row.status != 1"
                   >Recheck</el-button
                 >
               </div>
@@ -234,7 +229,7 @@
     </div>
 
     <div class="add-identification">
-      <div class="float-ball-wrap" @click="addIdentificationBtn">
+      <div class="float-ball-wrap" @click="addIdentificationBtn(true)">
         <svg class="progress-svg" viewBox="0 0 100 100">
           <circle
             cx="50"
@@ -262,50 +257,31 @@
 
         <div class="float-ball">
           <span v-if="progress != 0">{{ progress }}%</span>
-          <span v-else>FSID</span>
+          <span v-else>FS</span>
         </div>
       </div>
     </div>
 
-    <el-dialog
-      v-model="addIdentificationShow"
-      title="Comprehensive testing"
-      width="500"
-    >
-      <el-form>
-        <el-form-item label="Is mandatory re-inspection required?">
-          <el-switch
-            v-model="force"
-            class="ml-2"
-            style="
-              --el-switch-on-color: #13ce66;
-              --el-switch-off-color: #ff4949;
-            "
+    <div class="add-identification IS-btn">
+      <div class="float-ball-wrap" @click="addIdentificationBtn(false)">
+        <svg class="progress-svg" viewBox="0 0 100 100">
+          <circle
+            cx="50"
+            cy="50"
+            r="44"
+            fill="none"
+            stroke="#e5e7eb"
+            stroke-width="6"
           />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <div class="dialog-footer">
-          <el-button @click="addIdentification(0)">Cancel</el-button>
-          <el-button type="primary" @click="addIdentification(1)">
-            Submit
-          </el-button>
+        </svg>
+        <div class="float-ball">
+          <span> IS</span>
         </div>
-      </template>
-    </el-dialog>
-
+      </div>
+    </div>
     <el-dialog v-model="addRecheckShow" title="Testing" width="500">
       <el-form>
-        <el-form-item label="Is mandatory re-inspection required?">
-          <el-switch
-            v-model="force"
-            class="ml-2"
-            style="
-              --el-switch-on-color: #13ce66;
-              --el-switch-off-color: #ff4949;
-            "
-          />
-        </el-form-item>
+        Are you sure to retest?
       </el-form>
       <template #footer>
         <div class="dialog-footer">
@@ -321,7 +297,6 @@
       width="90%"
       title="Test Comparison"
       @open="handleDialogOpen"
-      :before-close="handleCloseFabricImg"
     >
       <div>
         <FabricImg
@@ -338,7 +313,6 @@
     </el-dialog>
   </div>
 </template>
-
 <script setup lang="ts">
 import { ref, onMounted, computed, onUnmounted, unref, nextTick } from "vue";
 
@@ -346,20 +320,60 @@ import {
   DataAnalysis,
   Picture,
   Clock,
-  List,
   Loading,
   CircleCheck,
   CircleClose,
   Folder,
   Document,
   Edit,
-  View,
   Aim,
   Refresh,
+  Download,
+  Setting,
 } from "@element-plus/icons-vue";
 import { ElMessageBox, ElMessage } from "element-plus";
 import axios from "axios";
 import FabricImg from "./components/FabricImg.vue";
+
+interface ImageNode {
+  node_id: string | number;
+  url?: string;
+  image_url?: string;
+  image_key: string;
+  image_name?: string;
+  folder: string;
+  status: number;
+  error?: string;
+  manual_reviewed?: number;
+  result?: Record<string, any>;
+}
+
+interface PageData {
+  folders: Record<string, number>;
+  total: number;
+  status_counts: Record<number, number>;
+  image_name: string;
+  image_key: string;
+  images: ImageNode[];
+}
+
+interface InspectImage {
+  image_url?: string;
+  image_key?: string;
+  result?: Record<string, any>;
+}
+
+interface SaveFileWritable {
+  write(data: unknown): Promise<void>;
+  close(): Promise<void>;
+}
+type SaveFilePickerWindow = Window & {
+  showSaveFilePicker(options?: {
+    suggestedName?: string;
+    types?: { description?: string; accept?: Record<string, string[]> }[];
+  }): Promise<{ createWritable(): Promise<SaveFileWritable> }>;
+};
+
 const loading = ref(false);
 enum Api {
   taskList = "http://127.0.0.1:8000/Unimelb/ImageSelect",
@@ -367,7 +381,8 @@ enum Api {
   recheck = "http://127.0.0.1:8000/Unimelb/ocr-tasks/rerun",
   manualReview = "http://127.0.0.1:8000/Unimelb/ocr-results/manual-review", 
 }
-const pageData = ref({
+
+const pageData = ref<PageData>({
   folders: {},
   total: 0,
   status_counts: {
@@ -376,6 +391,8 @@ const pageData = ref({
     2: 0,
     3: 0,
   },
+  image_name: "",
+  image_key: "",
   images: [],
 });
 
@@ -387,10 +404,9 @@ const folderList = computed(() => {
   }));
 });
 
-const getStatusTag = (status) => {
-  const map = {
+const getStatusTag = (status: number) => {
+  const map: Record<number, { text: string; cls: string }> = {
     0: { text: "To be tested", cls: "tag-wait" },
-
     1: { text: "In the process of testing", cls: "tag-running" },
     2: { text: "Completed", cls: "tag-success" },
     3: { text: "Failure", cls: "tag-fail" },
@@ -400,83 +416,85 @@ const getStatusTag = (status) => {
 
 async function loadData() {
   loading.value = true;
-
-  let from = {};
   axios
-    .get(Api.taskList, {
-      ...from,
-    })
+    .get(Api.taskList)
     .then(function (response) {
-      //
-      console.log(response.data);
       pageData.value = response.data.result;
 
       if (!response.data.result.total) {
         progress.value = 0;
       } else {
         const rate =
-          response.data.result.status_counts[0] / response.data.result.total;
+          (response.data.result.status_counts[0] +
+            response.data.result.status_counts[1]) /
+          response.data.result.total;
         progress.value = Number((100 - rate * 100).toFixed(2));
       }
-
       loading.value = false;
     })
     .catch(function (error) {
-      console.error(error);
+      const isNetworkErr = error.message === "Network Error";
+      if (isNetworkErr) {
+        ElMessage({
+          message:
+            "The backend service connection failed. Please check if the service is started and if the network is connected.",
+          type: "error",
+        });
+      } else {
+        ElMessage({
+          message:
+            "Query of task status failed:" + (error.message || "Unknown error"),
+          type: "error",
+        });
+      }
     });
 }
+
 const currentFile = ref("");
-//
-const openFolder = (data) => {
+
+const openFolder = (data: string) => {
   currentPage.value = 1;
   currentFile.value = data;
 };
-//
 const clearFilter = () => {
-  console.log("1");
   currentFile.value = "";
 };
-//
-const statusValue = ref(null);
-const tabStatus = (val) => {
+
+const statusValue = ref<number | null>(null);
+const tabStatus = (val: number | null) => {
   currentPage.value = 1;
   statusValue.value = val;
 };
-//
-const filterImageList = computed(() => {
+
+const filterImageList = computed<ImageNode[]>(() => {
   const all = pageData.value.images || [];
   let list = [...all];
-
-  //
   if (currentFile.value) {
     list = list.filter((item) => item.folder === currentFile.value);
   }
-
-  //
-  if (statusValue.value) {
+  if (statusValue.value !== null) {
     list = list.filter((item) => item.status === statusValue.value);
   }
-
   return list;
 });
 
 const currentPage = ref(1);
 const pageSize = ref(20);
-const pageImageList = computed(() => {
+
+const pageImageList = computed<ImageNode[]>(() => {
   const start = (currentPage.value - 1) * pageSize.value;
   const end = start + pageSize.value;
-  // console.log(filterImageList.value.slice(start, end));
   return filterImageList.value.slice(start, end);
 });
-const handleSizeChange = (val) => {
-  console.log(`${val} items per page`);
+
+const handleSizeChange = (val: number) => {
   pageSize.value = val;
   currentPage.value = 1;
 };
-const handleCurrentChange = (val) => {
-  console.log(`current page: ${val}`);
+const handleCurrentChange = (val: number) => {
   currentPage.value = val;
 };
+
 const progress = ref(0);
 const radius = 44;
 const circumference = computed(() => 2 * Math.PI * radius);
@@ -484,66 +502,60 @@ const offsetVal = computed(() => {
   return circumference.value * (1 - progress.value / 100);
 });
 
-const handleClick = () => {
-  addIdentificationBtn();
-};
-var listTimer;
-
-const addIdentificationShow = ref(false);
 const force = ref(false);
-const addIdentificationBtn = async () => {
-  if (unref(progress) == 0 || unref(progress) == 100) {
-    addIdentificationShow.value = true;
-  } else {
-    ElMessageBox.confirm(
-      "Detecting, do you want to continue submitting?",
-      "Warning",
-      {
-        confirmButtonText: "Confirmation",
-        cancelButtonText: "cancel",
-        type: "warning",
-      }
-    )
-      .then(() => {
-        addIdentificationShow.value = true;
-      })
-      .catch(() => {});
-  }
-};
-const addIdentification = async (val) => {
-  if (val == 0) {
-    addIdentificationShow.value = false;
-  } else {
-    addIdentificationShow.value = false;
-    axios
-      .post(Api.createTask, { force: unref(force) })
-      .then(function (response) {
-        console.log(response.data);
-
-        ElMessage({
-          message: response.data.message,
-          type: "success",
+const addIdentificationBtn = async (data: boolean) => {
+  force.value = data;
+  ElMessageBox.confirm(
+    unref(force)
+      ? "Should we proceed with the full-scale testing?"
+      : "Should we continue with the incremental testing?",
+    "Warning",
+    {
+      confirmButtonText: "OK",
+      cancelButtonText: "Cancel",
+      type: "warning",
+    }
+  )
+    .then(() => {
+      axios
+        .post(Api.createTask, { force: unref(force) })
+        .then(function (response) {
+          ElMessage({
+            message: response.data.message,
+            type: "success",
+          });
+          loadData();
+        })
+        .catch(function (error) {
+          const isNetworkErr = error.message === "Network Error";
+          if (isNetworkErr) {
+            ElMessage({
+              message:
+                "The backend service connection failed. Please check if the service is started and if the network is connected.",
+              type: "error",
+            });
+          } else {
+            ElMessage({
+              message:
+                "Query of task status failed:" +
+                (error.message || "Unknown error"),
+              type: "error",
+            });
+          }
         });
-        loadData();
-      })
-      .catch(function (error) {
-        console.log(error);
-        addIdentificationShow.value = false;
-      });
-  }
+    })
+    .catch(() => {});
 };
 
-const imgKeyList = ref([]);
+const imgKeyList = ref<(string | number)[]>([]);
 const addRecheckShow = ref(false);
 const isAlone = ref(false);
-const recheck = (data) => {
-  console.log(data);
+const recheckData = (data: ImageNode) => {
   isAlone.value = true;
-  imgKeyList.value = [data.image_key];
+  imgKeyList.value = data.image_key ? [data.image_key] : [];
   addRecheckShow.value = true;
 };
-
-const submitRecheck = async (val) => {
+const submitRecheck = async (val: number) => {
   if (val == 0) {
     addRecheckShow.value = false;
     return;
@@ -557,7 +569,6 @@ const submitRecheck = async (val) => {
   axios
     .post(Api.recheck, { image_keys: unref(imgKeyList) })
     .then(function (response) {
-      console.log(response.data);
       ElMessage({
         message: response.data.message,
         type: "success",
@@ -566,65 +577,105 @@ const submitRecheck = async (val) => {
       loadData();
     })
     .catch(function (error) {
-      ElMessage({
-        message: error,
-        type: "error",
-      });
+      const isNetworkErr = error.message === "Network Error";
+      if (isNetworkErr) {
+        ElMessage({
+          message:
+            "The backend service connection failed. Please check if the service is started and if the network is connected.",
+          type: "error",
+        });
+      } else {
+        ElMessage({
+          message:
+            "Query of task status failed:" + (error.message || "Unknown error"),
+          type: "error",
+        });
+      }
     });
 };
-//
-const checkRow = (data) => {
+const checkRow = (data: ImageNode) => {
   const key = data.image_key;
   const index = imgKeyList.value.indexOf(key);
   index > -1 ? imgKeyList.value.splice(index, 1) : imgKeyList.value.push(key);
-  console.log(unref(imgKeyList));
 };
-//
-const innerVisible = ref(false); //
-const inspectImg = ref({
-  result: {}, //
+
+const innerVisible = ref(false);
+const inspectImg = ref<InspectImage>({
+  result: {},
 });
-const openResult = (data) => {
-  console.log(data);
-  inspectImg.value = data;
-  innerVisible.value = true;
-  isEdit.value = false;
-};
-const canvasImgRef = ref(null);
+const canvasImgRef = ref<InstanceType<typeof FabricImg> | null>(null);
 const handleDialogOpen = async () => {
   await nextTick();
   canvasImgRef.value?.triggerDraw();
 };
-const handleCloseFabricImg = (done: () => void) => {
-  ElMessageBox.confirm("Confirm shutdown?")
-    .then(() => {
-      done();
-    })
-    .catch((error) => {
-      // catch error
-    });
-};
-
 const isEdit = ref(false);
-const editResult = (data) => {
-  console.log(data);
+const editResult = (data: ImageNode) => {
   inspectImg.value = data;
   isEdit.value = true;
   innerVisible.value = true;
 };
 
-const imTestingChange = (val) => {
-  console.log(val);
-  if (val == 0) {
-    innerVisible.value = false;
+const exportDataXls = async () => {
+  try {
+    const res = await axios({
+      method: "post",
+      url: Api.exportData,
+      data: {
+        image_keys: unref(imgKeyList),
+      },
+      responseType: "blob",
+    });
+
+    if (res.status != 200) {
+      ElMessage.error(res.statusText);
+    }
+    const blob = res.data;
+    const disposition = String(res.headers["content-disposition"] ?? "");
+    let fileName = "export.xlsx";
+    if (disposition) {
+      const reg = /filename="([^"]+)"/;
+      const result = disposition.match(reg);
+      if (result && result[1]) {
+        fileName = result[1];
+      }
+    }
+    const fileHandle = await (
+      window as unknown as SaveFilePickerWindow
+    ).showSaveFilePicker({
+      suggestedName: fileName,
+      types: [
+        {
+          description: "Excel",
+          accept: {
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
+              [".xlsx"],
+          },
+        },
+      ],
+    });
+
+    const writable = await fileHandle.createWritable();
+    await writable.write(blob);
+    await writable.close();
+    // ElMessage.success("Exporting and saving completed");
+  } catch (err: any) {
+    if (err.name === "AbortError") {
+    } else {
+      ElMessage.error(err);
+    }
   }
 };
+var listTimer: any;
+let failCount = 0;
+const maxFailTimes = 3;
+let showErrorMsgFlag = true;
 onMounted(() => {
   loadData();
-  listTimer = setInterval(async () => {
+  listTimer = setInterval(() => {
     axios
       .get(Api.taskList, {})
       .then(function (response) {
+        failCount = 0;
         if (!response.data.result.total) {
           progress.value = 0;
         } else {
@@ -633,8 +684,30 @@ onMounted(() => {
           progress.value = Number((100 - rate * 100).toFixed(2));
         }
       })
-      .catch(function (error) {
-        console.error(error);
+      .catch((error) => {
+        const isNetworkErr = error.message === "Network Error";
+        failCount++;
+        if (showErrorMsgFlag) {
+          if (isNetworkErr) {
+            ElMessage({
+              message:
+                "The backend service connection failed. Please check if the service is started and if the network is connected.",
+              type: "error",
+            });
+          } else {
+            ElMessage({
+              message:
+                "Query of task status failed:" +
+                (error.message || "Unknown error"),
+              type: "error",
+            });
+          }
+          showErrorMsgFlag = false;
+        }
+        if (failCount >= maxFailTimes) {
+          clearInterval(listTimer!);
+          listTimer = null;
+        }
       });
   }, 5000);
 });
@@ -935,21 +1008,17 @@ onUnmounted(() => {
   flex-shrink: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  // white-space: nowrap;
   word-wrap: break-word;
 }
 .col-update {
   width: 140px;
   flex-shrink: 0;
-  // display: flex;
-  // flex-wrap: wrap;
   .btn {
     display: block;
     margin: 0;
     margin-bottom: 0.5rem;
   }
 }
-
 .status-tag {
   display: inline-block;
   padding: 3px 10px;
@@ -1015,8 +1084,8 @@ onUnmounted(() => {
     position: fixed;
     left: 40px;
     bottom: 40px;
-    width: 80px;
-    height: 80px;
+    width: 60px;
+    height: 60px;
     cursor: pointer;
   }
   .progress-svg {
@@ -1028,8 +1097,8 @@ onUnmounted(() => {
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    width: 62px;
-    height: 62px;
+    width: 50px;
+    height: 50px;
     border-radius: 50%;
     background: #409eff;
     color: #fff;
@@ -1039,6 +1108,15 @@ onUnmounted(() => {
     font-size: 14px;
     font-weight: bold;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  }
+}
+.IS-btn {
+  .float-ball-wrap {
+    bottom: 120px;
+  }
+
+  .float-ball {
+    background: #48a969;
   }
 }
 </style>

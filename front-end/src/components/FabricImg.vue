@@ -253,7 +253,7 @@ const onContainerResize = debounce(() => {
   });
   cv.renderAll();
 });
-
+const EXCLUDED_BOX_FIELDS = ["drawing_type"];
 const loadImageAndBox = async () => {
   const url = getDrawUrl();
   if (!url || loadingLock) return;
@@ -295,9 +295,10 @@ const loadImageAndBox = async () => {
       top: (ch - dispH) / 2,
     });
     cv.add(img);
-
-    const boxItems: DetecBoxItem[] = Object.values(props.detecBoxs || {});
-    boxItems.forEach((item) => {
+    const boxItems: [string, DetecBoxItem][] = Object.entries(
+      props.detecBoxs || {}
+    ).filter(([fieldKey]) => !EXCLUDED_BOX_FIELDS.includes(fieldKey));
+    boxItems.forEach(([, item]) => {
       if (!item?.tokens_bbox) return;
       const { x0, y0, x1, y1 } = item.tokens_bbox;
       const conf = item.confidence ?? 1;
@@ -346,7 +347,7 @@ const loadImageAndBox = async () => {
     });
     cv.renderAll();
   } catch (err) {
-    console.error(err);
+   
     loadError.value = true;
   } finally {
     isLoading.value = false;
@@ -474,6 +475,9 @@ const onFieldInput = (fieldKey: string) => {
 };
 
 const handleClickItem = (fieldKey: string, item: DetecBoxEntry) => {
+  if (EXCLUDED_BOX_FIELDS.includes(fieldKey)) {
+    return 0;
+  }
   if (activeFieldKey.value === fieldKey) {
     resetAllBoxHighlight();
     activeFieldKey.value = null;
