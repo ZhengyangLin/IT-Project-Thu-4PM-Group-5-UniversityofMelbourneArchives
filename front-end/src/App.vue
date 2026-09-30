@@ -724,8 +724,6 @@ onUnmounted(() => {
   // padding: 24px;
   color: #fff;
   font-size: 14px;
-  background-image: url("@/assets/images/bg.jpeg");
-  background-size: 100% 100%;
 }
 
 .bg-layer {
@@ -740,7 +738,7 @@ onUnmounted(() => {
       rgba(10, 14, 28, 0.96),
       rgba(10, 14, 28, 0.88)
     ),
-    url("@/assets/bg_dark_tech_01.png") center/cover no-repeat;
+    
 }
 
 .page-header {
