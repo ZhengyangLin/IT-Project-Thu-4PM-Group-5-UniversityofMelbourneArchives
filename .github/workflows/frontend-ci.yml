@@ -23,6 +23,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -30,11 +31,14 @@ jobs:
           cache: "yarn"
           cache-dependency-path: front-end/yarn.lock
 
+
       - name: Install dependencies
         run: yarn install --frozen-lockfile
 
-      - name: Check frontend files
-        run: |
-          test -f src/App.vue
-          test -f src/components/FabricImg.vue
-          echo "Frontend files found successfully"
+     
+      - name: Type check
+        run: yarn type-check
+
+     
+      - name: Build frontend
+        run: yarn build-only
