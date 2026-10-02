@@ -3,7 +3,8 @@ from .Unimelb_request import (
     UnimelbTaskCreateRequest,
     UnimelbTaskRerunRequest,
     UnimelbImageResultUpdateRequest,
-    UnimelbOCRResultValues
+    UnimelbOCRResultValues,
+    UnimelbResultExportRequest
 )
 from .Unimelb_response import (
     UnimelbImageSelectItem,
@@ -25,5 +26,6 @@ __all__ = [
     "UnimelbOCRResultValues",
     "UnimelbImageResultUpdateRequest",
     "UnimelbImageResultUpdateResponse",
+    "UnimelbResultExportRequest",
      "Result",
 ]

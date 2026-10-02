@@ -10,8 +10,13 @@ import multiprocessing
 from pathlib import Path
 from threading import Lock
 import time
+from io import BytesIO
 from typing import Any
-
+from openpyxl import Workbook
+from openpyxl.styles import Alignment, Font
+from openpyxl.utils import get_column_letter
+from openpyxl.styles import Alignment, Font, PatternFill
+from ....config import Config
 from ....unimelb_result_codec import (
     OCR_RESULT_FIELDS,
     evidence_regions_bbox,
@@ -1190,3 +1195,140 @@ class UnimelbServiceImpl(UnimelbService):
             if self._closing and self._ocr_executor is None:
                 return
             self._closing = True
+
+    # Export selected OCR results to Excel, preserving confidence values
+    # for unreviewed images and preventing conflicts with running tasks.
+    def _export_ocr_results(self, image_keys: list[str] | None) -> bytes:
+        with self._tasks_lock:
+            selected_keys = list(dict.fromkeys(image_keys or self._image_statuses))
+            for image_key in selected_keys:
+                if image_key not in self._image_statuses:
+                    raise FileNotFoundError(f"The requested image_key does not exist in status data: {image_key}")
+
+        catalog = {self._image_key(image): image for image in self._collect_images()}
+        for image_key in selected_keys:
+            image = catalog.get(image_key)
+            if image is None or not image.is_file():
+                raise FileNotFoundError(f"The requested image does not exist: {image_key}")
+
+        reservation_token = object()
+        with self._rerun_image_owners_lock:
+            conflicts = [key for key in selected_keys if key in self._rerun_image_owners]
+            if conflicts:
+                raise UnimelbTaskRunningError("The selected images are being processed or are reserved "
+                    "by another task: " + ", ".join(conflicts))
+            for key in selected_keys:
+                self._rerun_image_owners[key] = reservation_token
+        try:
+            with self._tasks_lock:
+                states = {key: deepcopy(self._image_statuses[key]) for key in selected_keys}
+                running = [
+                    key for key, state in states.items()
+                    if self._normalize_image_status(state.get("status")) == IMAGE_STATUS_RUNNING
+                ]
+                if running:
+                    raise UnimelbTaskRunningError(
+                        "The selected images are running and cannot be exported: "
+                        + ", ".join(running)
+                    )
+            return self._build_results_excel(states)
+        finally:
+            self._release_rerun_image_owners(reservation_token, set(selected_keys))
+
+    @classmethod
+    def _build_results_excel(cls, states: dict[str, dict[str, Any]]) -> bytes:
+        CONFIDENCE_THRESHOLD = Config.load(UNIMELB_CONFIG_PATH).conf.t_high
+
+        low_conf_fill = PatternFill(
+            fill_type="solid",
+            fgColor="FFC7CE",
+        )
+        reviewed_fill = PatternFill(
+            fill_type="solid",
+            fgColor="C6EFCE",
+        )
+        include_confidence = any(
+            not cls._normalize_manual_reviewed(state.get("manual_reviewed"))
+            for state in states.values()
+        )
+        headers = ["image_key"]
+        for field in OCR_RESULT_FIELDS:
+            headers.append(field)
+            if include_confidence:
+                headers.append(f"{field}_conf")
+        workbook = Workbook()
+        try:
+            sheet = workbook.active
+            sheet.title = "OCR Results"
+            sheet.append(headers)
+            for image_key, state in states.items():
+                result = state.get("result") or {}
+                reviewed = cls._normalize_manual_reviewed(
+                    state.get("manual_reviewed")
+                )
+                row = [image_key]
+                for field in OCR_RESULT_FIELDS:
+                    row.append(result.get(field))
+                    if include_confidence:
+                        row.append(
+                            None
+                            if reviewed
+                            else result.get(f"{field}_conf")
+                        )
+                sheet.append(row)
+                current_row = sheet.max_row
+                if reviewed:
+                    image_key_cell = sheet.cell(
+                        row=current_row,
+                        column=1,
+                    )
+                    image_key_cell.fill = reviewed_fill
+                if not reviewed:
+                    column_index = 2
+                    for field in OCR_RESULT_FIELDS:
+                        confidence = result.get(f"{field}_conf")
+                        value_cell = sheet.cell(
+                            row=current_row,
+                            column=column_index,
+                        )
+                        if include_confidence:
+                            conf_cell = sheet.cell(
+                                row=current_row,
+                                column=column_index + 1,
+                            )
+                            if (
+                                    confidence is not None
+                                    and confidence < CONFIDENCE_THRESHOLD
+                            ):
+                                value_cell.fill = low_conf_fill
+                                conf_cell.fill = low_conf_fill
+                            column_index += 2
+                        else:
+                            column_index += 1
+                for cell in sheet[current_row]:
+                    if isinstance(cell.value, str):
+                        cell.data_type = "s"
+                        cell.number_format = "@"
+                    elif headers[cell.column - 1].endswith("_conf"):
+                        cell.number_format = "0.000"
+                    cell.alignment = Alignment(
+                        vertical="top",
+                        wrap_text=True,
+                    )
+            sheet.freeze_panes = "B2"
+            sheet.auto_filter.ref = sheet.dimensions
+            for cell in sheet[1]:
+                cell.font = Font(bold=True)
+                sheet.column_dimensions[
+                    get_column_letter(cell.column)
+                ].width = (
+                    55 if cell.column == 1 else 28
+                )
+            output = BytesIO()
+            workbook.save(output)
+            return output.getvalue()
+        finally:
+            workbook.close()
+
+    async def export_ocr_results(self, image_keys: list[str] | None) -> bytes:
+        return await asyncio.to_thread(self._export_ocr_results, image_keys)
