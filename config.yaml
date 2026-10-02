@@ -42,9 +42,9 @@ rule:
 
 llm:
   enabled: true
-  base_url: https://www.dmxapi.com/v1
-  api_key_env: sk-eK0xpdNC6aKqgzpqvUiSaW0QppgfMG3661mxc4sBukBCh98s
-  model: deepseek-v4-flash
+  base_url:
+  api_key_env:
+  model:
   temperature: 0.0
   max_tokens: 200000
   timeout: 600

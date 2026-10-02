@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 import cv2
 import numpy as np
 from rapidfuzz import fuzz
-
+from .table_regions import find_table, TableProposal
 from .models import BBox, Token
 
 log = logging.getLogger(__name__)
@@ -291,6 +291,17 @@ def locate(plain: np.ndarray, tokens: list[Token],
            ink_percentile: float = 15.0,
            fuzz_threshold: int = 85,
            line_min_ratio: float = 0.10) -> LocateResult:
+    try:
+        proposal = find_table(plain, tokens)
+    except cv2.error as exc:
+        log.warning("Local frame detection failed: %s", exc)
+        proposal = TableProposal(None, False, detail={"reason": "Local frame detection failed"})
+    if proposal.reliable and proposal.bbox is not None:
+        log.info("Local title block matched by %s: %s", proposal.method, proposal.bbox)
+        return LocateResult(proposal.bbox, proposal.method, .85,
+                            {**proposal.detail, "review_required": False})
+
+
     H, W = plain.shape
     page = (W, H)
     horiz, vert = line_masks(plain, ink_percentile, line_min_ratio)
