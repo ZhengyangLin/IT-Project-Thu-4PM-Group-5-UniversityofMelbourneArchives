@@ -58,3 +58,7 @@ class UnimelbService(ABC):
 
     async def start(self) -> None:
         pass
+
+    @abstractmethod
+    async def export_ocr_results(self, image_keys: list[str] | None) -> bytes:
+        raise NotImplementedError

@@ -48,3 +48,10 @@ class UnimelbImageResultUpdateRequest(BaseModel):
     result: UnimelbOCRResultValues = Field(
         description="The final values for the eight OCR fields; the fields must be fully populated, though the values themselves may be null.",
     )
+
+
+class UnimelbResultExportRequest(BaseModel):
+    image_keys: list[str] | None = Field(
+        default=None,
+        description="List of image identifiers in NODEID/IMAGENAME format to export. If empty, all records will be exported.",
+    )
