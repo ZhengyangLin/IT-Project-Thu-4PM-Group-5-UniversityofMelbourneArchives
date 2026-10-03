@@ -5,8 +5,8 @@ from threading import Lock
 import time
 
 from fastapi import HTTPException, Request
-from fastapi.responses import FileResponse
 
+from fastapi.responses import FileResponse,Response
 from .base_api import BaseAPI
 from ..schemas import (
     UnimelbImageSelectResponse,
@@ -17,6 +17,7 @@ from ..schemas import (
     UnimelbImageResultUpdateRequest,
     UnimelbImageResultUpdateResponse,
     Result,
+    UnimelbResultExportRequest,
 )
 from ..services import (
     UnimelbService,
@@ -84,6 +85,18 @@ class UnimelbAPI(BaseAPI):
             methods=["POST"],
             response_model=Result[UnimelbImageResultUpdateResponse],
             summary="Manually review and update an image OCR result",
+        )
+        self.router.add_api_route(
+            "/ocr-results/export",
+            self.export_ocr_results,
+            methods=["POST"],
+            response_class=Response,
+            responses={200: {"content": {
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+                    "schema": {"type": "string", "format": "binary"},
+                },
+            }}},
+            summary="Export image OCR results to csv",
         )
 
     # # Return the image list
@@ -198,4 +211,22 @@ class UnimelbAPI(BaseAPI):
         return Result[UnimelbImageResultUpdateResponse].ok(
             data,
             message="The OCR results have undergone manual review and have been saved.",
+        )
+
+    async def export_ocr_results(
+        self, request: UnimelbResultExportRequest,
+    ) -> Response:
+        try:
+            content = await self.service.export_ocr_results(request.image_keys)
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except UnimelbTaskRunningError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return Response(
+            content=content,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={
+                "Content-Disposition": 'attachment; filename="unimelb_image_status.xlsx"',
+                "Cache-Control": "no-store",
+            },
         )
