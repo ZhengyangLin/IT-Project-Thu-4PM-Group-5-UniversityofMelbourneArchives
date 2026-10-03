@@ -144,7 +144,7 @@
             <div
               class="img-row"
               v-for="row in pageImageList"
-              :key="row.node_id"
+              :key="row.image_key"
             >
               <div class="col-select">
                 <el-checkbox
@@ -257,7 +257,7 @@
 
         <div class="float-ball">
           <span v-if="progress != 0">{{ progress }}%</span>
-          <span v-else>FS</span>
+          <span v-else> FS</span>
         </div>
       </div>
     </div>
@@ -280,9 +280,7 @@
       </div>
     </div>
     <el-dialog v-model="addRecheckShow" title="Testing" width="500">
-      <el-form>
-        Are you sure to retest?
-      </el-form>
+      <el-form> Are you sure to retest? </el-form>
       <template #footer>
         <div class="dialog-footer">
           <el-button @click="submitRecheck(0)">Cancel</el-button>
@@ -307,6 +305,7 @@
           :image_key="inspectImg.image_key"
           :conf-threshold="0.01"
           :isEdit="isEdit"
+          @saved="handleReviewSaved"
           v-if="innerVisible"
         />
       </div>
@@ -415,10 +414,10 @@ const getStatusTag = (status: number) => {
   return map[status] || { text: "Unknown", cls: "tag-unknown" };
 };
 
-async function loadData() {
+async function loadData(): Promise<PageData | null> {
   loading.value = true;
-  axios
-    .get(Api.taskList)
+  return axios
+    .get<{ result: PageData }>(Api.taskList)
     .then(function (response) {
       pageData.value = response.data.result;
 
@@ -426,12 +425,12 @@ async function loadData() {
         progress.value = 0;
       } else {
         const rate =
-          (response.data.result.status_counts[0] +
-            response.data.result.status_counts[1]) /
+          ((response.data.result.status_counts[0] ?? 0) +
+            (response.data.result.status_counts[1] ?? 0)) /
           response.data.result.total;
         progress.value = Number((100 - rate * 100).toFixed(2));
       }
-      loading.value = false;
+      return response.data.result;
     })
     .catch(function (error) {
       const isNetworkErr = error.message === "Network Error";
@@ -448,14 +447,22 @@ async function loadData() {
           type: "error",
         });
       }
+      return null;
+    })
+    .finally(() => {
+      loading.value = false;
     });
 }
 
-const currentFile = ref("");
+const currentFile = ref<string>("");
 
 const openFolder = (data: string) => {
   currentPage.value = 1;
-  currentFile.value = data;
+  if (currentFile.value == data) {
+    clearFilter();
+  } else {
+    currentFile.value = data;
+  }
 };
 const clearFilter = () => {
   currentFile.value = "";
@@ -616,6 +623,22 @@ const editResult = (data: ImageNode) => {
   innerVisible.value = true;
 };
 
+const handleReviewSaved = async (imageKey: string) => {
+  const data = await loadData();
+  if (
+    !data ||
+    !innerVisible.value ||
+    inspectImg.value.image_key !== imageKey
+  ) {
+    return;
+  }
+
+  const latest = data.images.find((row) => row.image_key === imageKey);
+  if (latest) {
+    inspectImg.value = latest;
+  }
+};
+
 const exportDataXls = async () => {
   try {
     const res = await axios({
@@ -720,8 +743,6 @@ onUnmounted(() => {
 <style scoped lang="less">
 .image-task-page {
   position: relative;
-  // min-height: 100%;
-  // padding: 24px;
   color: #fff;
   font-size: 14px;
 }
@@ -734,13 +755,11 @@ onUnmounted(() => {
   height: 100%;
   z-index: -2;
   background: linear-gradient(
-      to bottom,
-      rgba(10, 14, 28, 0.96),
-      rgba(10, 14, 28, 0.88)
-    ),
-    
+    to bottom,
+    rgba(10, 14, 28, 0.96),
+    rgba(10, 14, 28, 0.88)
+  );
 }
-
 .page-header {
   text-align: center;
   margin-bottom: 24px;

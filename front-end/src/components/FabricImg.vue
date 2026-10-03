@@ -36,17 +36,12 @@
             {{ fieldNameMap[item.fieldKey] || item.fieldKey }}
           </div>
           <div class="field-value" :title="String(item.value ?? '')">
-            <span
-              v-if="
-                isEdit &&
-                (fieldNameMap[item.fieldKey] || item.fieldKey) ===
-                  'Figure number'
-              "
-            >
+            <!-- && (fieldNameMap[item.fieldKey] || item.fieldKey) === 'Figure number' -->
+            <span v-if="isEdit" >
               Final value:
               <el-input
                 :model-value="getFieldValue(item.fieldKey)"
-                @update:model-value="onFieldInput(item.fieldKey)"
+                @update:model-value="setFieldValue(item.fieldKey, $event)"
                 placeholder=""
                 size="small"
               />
@@ -162,6 +157,9 @@ const props = withDefaults(
     isEdit: false,
   }
 );
+const emit = defineEmits<{
+  saved: [imageKey: string];
+}>();
 enum Api {
   manualReview = "http://127.0.0.1:8000/Unimelb/ocr-results/manual-review",
 }
@@ -468,11 +466,6 @@ const setFieldValue = (fieldKey: string, val: string | number) => {
   if (!item) return;
   item.value = val;
 };
-const onFieldInput = (fieldKey: string) => {
-  return (val: string | number | null) => {
-    setFieldValue(fieldKey, val ?? "");
-  };
-};
 
 const handleClickItem = (fieldKey: string, item: DetecBoxEntry) => {
   if (EXCLUDED_BOX_FIELDS.includes(fieldKey)) {
@@ -548,6 +541,7 @@ const submit = () => {
             message: response.data.message,
             type: "success",
           });
+          emit("saved", response.data.result.image_key);
         })
         .catch(function (error) {
           const isNetworkErr = error.message === "Network Error";
