@@ -1,0 +1,44 @@
+name: Frontend CI
+
+on:
+  push:
+    branches:
+      - "front-end"
+      - "front-ci"
+
+  pull_request:
+    branches:
+      - "front-end"
+      - "front-ci"
+
+jobs:
+  frontend-ci:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: front-end
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.22.2"
+          cache: "yarn"
+          cache-dependency-path: front-end/yarn.lock
+
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+     
+      - name: Type check
+        run: yarn type-check
+
+     
+      - name: Build frontend
+        run: yarn build-only
