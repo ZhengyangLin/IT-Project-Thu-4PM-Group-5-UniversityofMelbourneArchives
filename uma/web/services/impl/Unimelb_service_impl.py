@@ -822,7 +822,7 @@ class UnimelbServiceImpl(UnimelbService):
                 if ((owned_image_keys is None or image_key in owned_image_keys)
                     and state.get("task_uuid") == task_uuid
                     and self._normalize_image_status(state.get("status"))
-                    in {IMAGE_STATUS_PENDING, IMAGE_STATUS_RUNNING}
+                    in {IMAGE_STATUS_RUNNING}
                 ):
                     state.update(
                         status=IMAGE_STATUS_FAILED,
@@ -1195,6 +1195,20 @@ class UnimelbServiceImpl(UnimelbService):
             if self._closing and self._ocr_executor is None:
                 return
             self._closing = True
+            executor = self._ocr_executor
+            self._ocr_executor = None
+
+        background_tasks = tuple(self._background_tasks)
+        for task in background_tasks:
+            task.cancel()
+        try:
+            if executor is not None:
+                await asyncio.to_thread(
+                    self._kill_ocr_executor, executor
+                )
+        finally:
+            if background_tasks:
+                await asyncio.gather(*background_tasks, return_exceptions=True)
 
     # Export selected OCR results to Excel, preserving confidence values
     # for unreviewed images and preventing conflicts with running tasks.
@@ -1332,3 +1346,21 @@ class UnimelbServiceImpl(UnimelbService):
 
     async def export_ocr_results(self, image_keys: list[str] | None) -> bytes:
         return await asyncio.to_thread(self._export_ocr_results, image_keys)
+
+    @staticmethod
+    def _kill_ocr_executor(executor: ProcessPoolExecutor) -> None:
+        kill_workers = getattr(executor, "kill_workers", None)
+        if kill_workers is not None:
+            kill_workers()
+            return
+
+        processes = tuple((executor._processes or {}).values())
+        try:
+            for process in processes:
+                if process.is_alive():
+                    try:
+                        process.kill()
+                    except ProcessLookupError:
+                        pass
+        finally:
+            executor.shutdown(wait=True, cancel_futures=True)

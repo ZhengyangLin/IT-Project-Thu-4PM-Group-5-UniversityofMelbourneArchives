@@ -198,12 +198,12 @@
                 >
                 <el-button
                   class="btn"
-                  type="warning"
+                  :type="row.status === 0 ? 'primary' : 'warning'"
                   size="small"
                   :icon="Aim"
                   @click="recheckData(row)"
                   v-if="row.status != 1"
-                  >Recheck</el-button
+                  >{{ row.status === 0 ? "Check" : "Recheck" }}</el-button
                 >
               </div>
             </div>
@@ -303,6 +303,7 @@
           :thumb-url-image="inspectImg.image_url"
           :detecBoxs="inspectImg.result"
           :image_key="inspectImg.image_key"
+          :image-manual-review="inspectImg.manual_reviewed"
           :conf-threshold="0.01"
           :isEdit="isEdit"
           @saved="handleReviewSaved"
@@ -359,6 +360,7 @@ interface PageData {
 interface InspectImage {
   image_url?: string;
   image_key?: string;
+  manual_reviewed?: number;
   result?: Record<string, any>;
 }
 

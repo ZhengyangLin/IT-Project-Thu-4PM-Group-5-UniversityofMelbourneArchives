@@ -50,7 +50,7 @@
               Final value:{{ item.value ?? "-" }}</span
             >
           </div>
-          <div class="field-meta">
+          <div v-if="props.imageManualReview == 0" class="field-meta">
             <div class="conf">
               Confidence:{{ formatConfidence(item.confidence) }}
             </div>
@@ -85,6 +85,9 @@
             >
               {{ item.value ? item.review_status : "No data was found" }}
             </span>
+          </div>
+          <div v-else-if="props.imageManualReview === 1" class="field-meta">
+            <span class="status-tag tag-reviewed">Reviewed</span>
           </div>
         </div>
         <div v-if="detecBoxEntries.length === 0" class="empty-item">
@@ -147,6 +150,7 @@ const props = withDefaults(
     image_key?: string;
     confThreshold?: number;
     isEdit?: boolean;
+    imageManualReview?: number;
   }>(),
   {
     urlImage: undefined,
@@ -155,6 +159,7 @@ const props = withDefaults(
     image_key: "",
     confThreshold: 0.3,
     isEdit: false,
+    imageManualReview: 0,
   }
 );
 const emit = defineEmits<{
@@ -345,7 +350,7 @@ const loadImageAndBox = async () => {
     });
     cv.renderAll();
   } catch (err) {
-   
+
     loadError.value = true;
   } finally {
     isLoading.value = false;
@@ -728,6 +733,10 @@ onUnmounted(() => {
   .tag-review {
     background: rgba(230, 162, 60, 0.15);
     color: #e6a23c;
+  }
+  .tag-reviewed {
+    background: rgba(64, 158, 255, 0.15);
+    color: #409eff;
   }
   .tag-red {
     background: rgba(230, 162, 60, 0.15);
