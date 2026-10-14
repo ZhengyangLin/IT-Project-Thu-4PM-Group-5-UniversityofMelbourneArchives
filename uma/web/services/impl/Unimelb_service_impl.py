@@ -48,7 +48,8 @@ from ...workers.Unimelb_ocr_worker import (
 # OCR input paths, supported image formats, and output settings.
 PROJECT_DIR = Path(__file__).resolve().parents[4]
 PLAN_SAMPLE_DIR = PROJECT_DIR / "plan_sample"
-OCR_FOLDERS = ("YFA_cabana", "YFA_state_government")
+
+EXCLUDED_IMAGE_FOLDERS = frozenset({"bates_smart_mccutcheon"})
 IMAGE_EXTENSIONS = {".tif", ".tiff", ".jpg", ".jpeg", ".png", ".bmp", ".webp",}
 log = logging.getLogger(__name__)
 UNIMELB_OCR_ENGINES = ("paddle",)
@@ -136,7 +137,8 @@ class UnimelbServiceImpl(UnimelbService):
     async def get_image_select(self) -> UnimelbImageSelectResponse:
         self._validate_folders()
         paths = await asyncio.to_thread(self._collect_images)
-        counts = {name.upper(): 0 for name in OCR_FOLDERS}
+
+        counts = {folder.name.upper(): 0 for folder in self._image_folders()}
         status_counts = {"0": 0, "1": 0, "2": 0, "3": 0}
         with self._tasks_lock:
             # Use a status snapshot to keep the response consistent during concurrent updates.
@@ -146,7 +148,8 @@ class UnimelbServiceImpl(UnimelbService):
             relative = path.relative_to(PLAN_SAMPLE_DIR)
             folder = relative.parts[0].upper()
             node_id = path.parent.name
-            counts[folder] += 1
+
+            counts[folder] = counts.get(folder, 0) + 1
             image_key = f"{node_id}/{path.name}"
             image_status = statuses.get(image_key, {})
             status = self._normalize_image_status(
@@ -181,7 +184,8 @@ class UnimelbServiceImpl(UnimelbService):
         )
 
     def resolve_image(self, folder: str, node_id: str, image_name: str,) -> Path | None:
-        folder_map = {name.upper(): name for name in OCR_FOLDERS}
+
+        folder_map = {path.name.upper(): path for path in self._image_folders()}
         actual_folder = folder_map.get(folder.upper())
         if actual_folder is None:
             return None
@@ -189,7 +193,7 @@ class UnimelbServiceImpl(UnimelbService):
             return None
 
         # Resolve paths and ensure the image stays within the allowed directory.
-        allowed_root = (PLAN_SAMPLE_DIR / actual_folder).resolve()
+        allowed_root = actual_folder.resolve()
         candidate = (allowed_root / node_id / image_name).resolve()
         try:
             candidate.relative_to(allowed_root)
@@ -357,12 +361,22 @@ class UnimelbServiceImpl(UnimelbService):
             total=len(images),
             started=True,
         )
+    @staticmethod
+    def _image_folders() -> list[Path]:
+        if not PLAN_SAMPLE_DIR.is_dir():
+            return []
+        return [
+            folder for folder in sorted(PLAN_SAMPLE_DIR.iterdir())
+            if folder.is_dir()
+               and folder.name.casefold() not in EXCLUDED_IMAGE_FOLDERS
+        ]
+
 
     def _collect_images(self) -> list[Path]:
         return [
             path
-            for name in OCR_FOLDERS
-            for path in sorted((PLAN_SAMPLE_DIR / name).rglob("*"))
+            for folder in self._image_folders()
+            for path in sorted(folder.rglob("*"))
             if path.is_file() and path.suffix.lower() in IMAGE_EXTENSIONS
         ]
 
@@ -481,12 +495,11 @@ class UnimelbServiceImpl(UnimelbService):
 
     @staticmethod
     def _validate_folders() -> None:
-        missing = [
-            name for name in OCR_FOLDERS
-            if not (PLAN_SAMPLE_DIR / name).is_dir()
-        ]
-        if missing:
-            raise FileNotFoundError("OCR image directories not found: " + ", ".join(missing))
+        if not PLAN_SAMPLE_DIR.is_dir():
+            raise FileNotFoundError(
+                f"OCR image root directory not found: {PLAN_SAMPLE_DIR}"
+            )
+
 
     async def _run_ocr_task(self,task_uuid: str,images: list[Path],output_dir: Path,*,reservation_token: object,write_batch_summary: bool = True,) -> None:
         image_keys = {self._image_key(image) for image in images}

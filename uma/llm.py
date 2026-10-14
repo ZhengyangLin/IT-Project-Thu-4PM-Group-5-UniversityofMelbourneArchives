@@ -53,26 +53,38 @@ FIELD_DESC = {
                        "forcing a value."),
     "date":           "Drawing date, not a date from the revision table",
     "scale":          "Sheet-level drawing scale",
-    "drawing_type":   ("Drawing type. Choose elevation, perspective, plan, section, "
-                       "or detail.\n"
-                       "                  Base the choice on words in the drawing "
-                       "title (SITE PLAN → plan; FOUNDATION DETAILS → detail).\n"
-                       "                  Use mixed when the sheet contains multiple "
-                       "types. If the title does not reveal the type, return null "
-                       "with reason code requires_visual. The text-only workflow has "
-                       "no graphical evidence, so do not guess."),
+
+    "drawing_type":   ("Drawing type is a classification field, exempt from the "
+                       "verbatim transcription and OCR correction rules. Infer the "
+                       "type from the supplied title, OCR text, and layout context "
+                       "(SITE PLAN → plan; FOUNDATION DETAILS → detail).\n"
+                       "                  Always return tokens: []. Set verbatim "
+                       "and corrected to exactly the same lowercase label: "
+                       "elevation, perspective, plan, section, detail, or mixed. "
+                       "Use mixed only when the text supports multiple types. "
+                       "Do not use value or type keys. Set correction_basis to null; "
+                       "put a brief classification rationale in note.\n"
+                       "                  If the type cannot be determined, return "
+                       "verbatim: null, corrected: null, tokens: [], confidence: "
+                       "low, and a reason code. Use requires_visual when graphical "
+                       "evidence is needed. This text-only workflow has no graphical "
+                       "evidence, so do not guess."),
 }
 
 # System instructions for metadata extraction and OCR correction.
 SYSTEM = """You are cataloguing architectural drawings for a university archive. You will be shown two views of a drawing title block.
 
-View 1 is a character grid that restores text to its approximate original position so you can understand the layout.
-View 2 is a numbered token index with one text block per line and a row number. Values may come only from this index.
+View 1 is a character grid that restores text to its approximate original position so you can understand the layout.、
+
+View 2 is a numbered token index with one text block per line and a row number. Transcribed values may come only from this index. The drawing_type classification exception below takes precedence over transcription and OCR correction requirements.
+
+drawing_type exception: Classify using the supplied title, OCR text, and layout context without citing token IDs. Always return tokens: []. verbatim and corrected must both contain exactly the same lowercase classification label from elevation, perspective, plan, section, detail, mixed; these two fields store the category, not source text. Never use value or type keys. Set correction_basis to null and explain the classification briefly in note. If classification is uncertain, both verbatim and corrected must be null, tokens must be [], confidence must be low, and reason must be supplied. Use requires_visual when graphical evidence is needed; no image is provided. Use mixed only when the supplied text supports multiple types.
 
 Non-negotiable requirements:
-1. Every field value must be composed from token IDs in View 2. Do not introduce any text that is absent from the index.
-2. verbatim is the exact text of the selected tokens joined with single spaces. corrected is the cleaned form, used only for standardized capitalization or punctuation, or for an evidence-backed OCR correction. Keep them separate and never alter verbatim.
-3. When uncertain, return null with one of these reason codes: illegible, not_present, ambiguous, or low_resolution. Prefer an empty field to a plausible guess.
+
+1. Except for drawing_type, every field value must be composed from token IDs in View 2. Do not introduce any text that is absent from the index.
+2. Except for drawing_type, verbatim is the exact text of the selected tokens joined with single spaces. corrected is the cleaned form, used only for standardized capitalization or punctuation, or for an evidence-backed OCR correction. Keep them separate and never alter verbatim. For drawing_type, follow the classification exception above: verbatim and corrected must be identical.
+3. When uncertain, return null with one of these reason codes: illegible, not_present, ambiguous, or low_resolution (drawing_type may also use requires_visual). Prefer an empty field to a plausible guess.
 4. Do not infer missing facts or infer an architect from the project name.
    Prefer an explicitly identified architect; otherwise, follow the field
    definition to select a supported drawing producer or issuer.
@@ -109,6 +121,28 @@ def build_prompt(grid: str, index: str, pending: list[str],
         "draughtsperson": {"tokens": [], "verbatim": None,
                            "reason": "not_present"},
     }
+
+    classification_fallback = ""
+    if "drawing_type" in pending:
+        example["drawing_type"] = {
+            "tokens": [], "verbatim": "detail", "corrected": "detail",
+            "correction_basis": None, "confidence": "high", "reason": None,
+            "note": "The title AMENDED FOUNDATION DETAILS indicates detail.",
+        }
+        unknown_example = {
+            "drawing_type": {
+                "tokens": [], "verbatim": None, "corrected": None,
+                "correction_basis": None, "confidence": "low",
+                "reason": "requires_visual",
+            },
+        }
+        classification_fallback = (
+                "\nIf drawing_type requires graphical evidence, replace its entry "
+                "with the following (choose the example supported by the input; "
+                "do not copy detail by default):\n"
+                + json.dumps(unknown_example, ensure_ascii=False, indent=2)
+                + "\n"
+        )
     warn = ""
     if rejected:
         lines = "\n".join(f"  {k}: {v}" for k, v in rejected.items())
@@ -142,6 +176,8 @@ Row numbers in View 2 correspond directly to rows in View 1. Use them to convert
 [OUTPUT]
 Return a JSON object whose keys are field names. Example:
 {json.dumps(example, ensure_ascii=False, indent=2)}
+
+{classification_fallback}
 """
 
 
