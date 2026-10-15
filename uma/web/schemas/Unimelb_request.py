@@ -1,6 +1,5 @@
 from __future__ import annotations
-
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field,field_validator
 
 
 # Request model for creating an OCR task
@@ -53,5 +52,22 @@ class UnimelbImageResultUpdateRequest(BaseModel):
 class UnimelbResultExportRequest(BaseModel):
     image_keys: list[str] | None = Field(
         default=None,
-        description="List of image identifiers in NODEID/IMAGENAME format to export. If empty, all records will be exported.",
+        description="List of NODEID/IMAGENAME values for images to export; no image range restriction if empty",
     )
+    status: int | None = Field(
+        default=None,
+        ge=0,
+        le=3,
+        description="Image processing status: 0 pending, 1 processing, 2 completed, 3 failed; passing 1 immediately returns 409 and export is not allowed; omitted, null, empty string, or whitespace-only values apply no restriction",
+    )
+    folder: str | None = Field(
+        default=None,
+        description="Folder name in the image list, case-insensitive; omitted, null, empty string, or whitespace-only values apply no restriction",
+    )
+
+    @field_validator("status", "folder", mode="before")
+    @classmethod
+    def normalize_empty_filter(cls, value: object) -> object:
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
