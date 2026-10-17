@@ -44,7 +44,7 @@ FIELD_DESC = {
                        "                  Distinguish it from the project name: the "
                        "title says what the drawing shows, not whose property it is."),
     "architect":      "Name of the architect or architectural practice; if none is identified, use the drawing producer or issuer shown in the title block. Pay particular attention to company names ending in LTD. or PTY. LTD., including the full name preceding the suffix. Use layout and nearby contact details to establish the role; the suffix alone is insufficient. Extract only the name from View 2, excluding contact details. Return null if the role is unclear.",
-    "draughtsperson": "Draughtsperson, usually shown as initials",
+    "draughtsperson": "Draughtsperson, usually shown as initials. Look for the value either to the right of or below the corresponding label, and check both positions before concluding it is absent.",
     "drawing_number": ("Drawing number. Common forms include 562/D8 and 603/A1 "
                        "(digits, slash, letter and digits), as well as A-1234 and "
                        "12345-678. There is only one component on each side of the "
@@ -235,6 +235,7 @@ class LlmClient:
         resp = self._lazy().chat.completions.create(
             model=self.cfg.model,
             temperature=self.cfg.temperature,     # Use deterministic output when set to 0.
+            reasoning_effort="medium",
             max_tokens=self.cfg.max_tokens,
             messages=[{"role": "system", "content": system},
                       {"role": "user", "content": user}])
