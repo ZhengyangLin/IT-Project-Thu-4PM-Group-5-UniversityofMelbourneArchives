@@ -166,7 +166,7 @@ const emit = defineEmits<{
   saved: [imageKey: string];
 }>();
 enum Api {
-  manualReview = "http://127.0.0.1:8000/Unimelb/ocr-results/manual-review",
+  manualReview = "/Unimelb/ocr-results/manual-review",
 }
 const fabricCanvasRef = ref<HTMLCanvasElement | null>(null);
 const containerRef = ref<HTMLDivElement | null>(null);

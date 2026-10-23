@@ -379,24 +379,14 @@ interface InspectImage {
   result?: Record<string, any>;
 }
 
-interface SaveFileWritable {
-  write(data: unknown): Promise<void>;
-  close(): Promise<void>;
-}
-type SaveFilePickerWindow = Window & {
-  showSaveFilePicker(options?: {
-    suggestedName?: string;
-    types?: { description?: string; accept?: Record<string, string[]> }[];
-  }): Promise<{ createWritable(): Promise<SaveFileWritable> }>;
-};
 const AllRowData = ref<boolean>(false);
 const loading = ref<boolean>(false);
 enum Api {
-  taskList = "http://127.0.0.1:8000/Unimelb/ImageSelect",
-  createTask = "http://127.0.0.1:8000/Unimelb/ocr-tasks",
-  recheck = "http://127.0.0.1:8000/Unimelb/ocr-tasks/rerun",
-  manualReview = "http://127.0.0.1:8000/Unimelb/ocr-results/manual-review",
-  exportData = "http://127.0.0.1:8000/Unimelb/ocr-results/export",
+  taskList = "/Unimelb/ImageSelect",
+  createTask = "/Unimelb/ocr-tasks",
+  recheck = "/Unimelb/ocr-tasks/rerun",
+  manualReview = "/Unimelb/ocr-results/manual-review",
+  exportData = "/Unimelb/ocr-results/export",
 }
 
 const pageData = ref<PageData>({
@@ -766,28 +756,25 @@ const exportDataXls = async () => {
     const disposition = String(res.headers["content-disposition"] ?? "");
     const matched = disposition.match(/filename="?([^";]+)"?/i);
     const fileName = matched?.[1] || "export.xlsx";
-    const fileHandle = await (
-      window as unknown as SaveFilePickerWindow
-    ).showSaveFilePicker({
-      suggestedName: fileName,
-      types: [
-        {
-          description: "Excel",
-          accept: {
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
-              [".xlsx"],
-          },
-        },
-      ],
-    });
-    const writable = await fileHandle.createWritable();
-    await writable.write(res.data);
-    await writable.close();
-    ElMessage({ type: "success", message: "Export completed" });
+    const downloadUrl = URL.createObjectURL(res.data);
+    const downloadLink = document.createElement("a");
+
+    try {
+      downloadLink.href = downloadUrl;
+      downloadLink.download = fileName;
+      document.body.appendChild(downloadLink);
+      downloadLink.click();
+    } finally {
+      downloadLink.remove();
+      // Give the browser time to receive the download before releasing the URL.
+      window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 60_000);
+    }
+
+    ElMessage({ type: "success", message: "Download started" });
   } catch (err: any) {
     if (err?.name === "AbortError") return;
     console.error("[exportDataXls]", err);
-    ElMessage.error("Export failed! Please check the backend service.");
+    ElMessage.error("Export failed. Please try again.");
   }
 };
 
