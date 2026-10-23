@@ -88,7 +88,7 @@ class UnimelbImageSelectItem(BaseModel):
     status: int = Field(
         ge=0,
         le=3,
-        description="Image status: 0 Pending detection, 1 Detecting, 2 Completed, 3 Failed",
+        description="Image status: 0 Pending, 1 Processing (queued or running), 2 Completed, 3 Failed",
     )
     task_uuid: str | None = None
     error: str | None = None

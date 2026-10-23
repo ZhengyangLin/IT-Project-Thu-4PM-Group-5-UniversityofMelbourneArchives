@@ -22,7 +22,7 @@
           <el-icon><Picture /></el-icon>
         </div>
         <div class="stat-content">
-          <div class="stat-label">All the pictures</div>
+          <div class="stat-label">All images</div>
           <div class="stat-value">{{ pageData.total }}</div>
         </div>
       </div>
@@ -35,7 +35,7 @@
           <el-icon><Clock /></el-icon>
         </div>
         <div class="stat-content">
-          <div class="stat-label">To be tested</div>
+          <div class="stat-label">Pending</div>
           <div class="stat-value">{{ pageData.status_counts[0] }}</div>
         </div>
       </div>
@@ -48,7 +48,7 @@
           <el-icon><Loading /></el-icon>
         </div>
         <div class="stat-content">
-          <div class="stat-label">In the process of testing</div>
+          <div class="stat-label">Processing</div>
           <div class="stat-value">{{ pageData.status_counts[1] }}</div>
         </div>
       </div>
@@ -61,7 +61,7 @@
           <el-icon><CircleCheck /></el-icon>
         </div>
         <div class="stat-content">
-          <div class="stat-label">Successfully</div>
+          <div class="stat-label">Success</div>
           <div class="stat-value">{{ pageData.status_counts[2] }}</div>
         </div>
       </div>
@@ -74,7 +74,7 @@
           <el-icon><CircleClose /></el-icon>
         </div>
         <div class="stat-content">
-          <div class="stat-label">Failure</div>
+          <div class="stat-label">Failed</div>
           <div class="stat-value">{{ pageData.status_counts[3] }}</div>
         </div>
       </div>
@@ -89,7 +89,7 @@
         <div class="folder-list-wrap">
           <div class="folder-item header-row">
             <div class="col-name">Folder name</div>
-            <div class="col-count">Images Number</div>
+            <div class="col-count">Image count</div>
           </div>
           <div
             class="folder-item"
@@ -113,7 +113,7 @@
               class="btn"
               type="primary"
               :icon="Refresh"
-              @click="submitRecheck(1)"
+              @click="submitRecheck(selectimgKeyList)"
               >Batch recheck</el-button
             >
             <el-button
@@ -286,13 +286,20 @@
         </div>
       </div>
     </div>
-    <el-dialog v-model="addRecheckShow" title="Testing" width="500">
-      <el-form> Are you sure to retest? </el-form>
+    <el-dialog
+      v-model="addRecheckShow"
+      :title="imageCheckAction"
+      width="500"
+      @close="closeRecheckDialog"
+    >
+      <el-form>
+        Are you sure you want to {{ imageCheckAction.toLowerCase() }} this image?
+      </el-form>
       <template #footer>
         <div class="dialog-footer">
-          <el-button @click="submitRecheck(0)">Cancel</el-button>
-          <el-button type="primary" @click="submitRecheck(1)">
-            Submit
+          <el-button @click="closeRecheckDialog">Cancel</el-button>
+          <el-button type="primary" @click="submitRecheck(imgKeyList)">
+            {{ imageCheckAction }}
           </el-button>
         </div>
       </template>
@@ -300,7 +307,7 @@
     <el-dialog
       v-model="innerVisible"
       width="90%"
-      title="Test Comparison"
+      title="Extraction results"
       @open="handleDialogOpen"
     >
       <div>
@@ -425,29 +432,27 @@ const folderList = computed(() => {
 
 const getStatusTag = (status: number) => {
   const map: Record<number, { text: string; cls: string }> = {
-    0: { text: "To be tested", cls: "tag-wait" },
-    1: { text: "In the process of testing", cls: "tag-running" },
-    2: { text: "Completed", cls: "tag-success" },
-    3: { text: "Failure", cls: "tag-fail" },
+    0: { text: "Pending", cls: "tag-wait" },
+    1: { text: "Processing", cls: "tag-running" },
+    2: { text: "Success", cls: "tag-success" },
+    3: { text: "Failed", cls: "tag-fail" },
   };
   return map[status] || { text: "Unknown", cls: "tag-unknown" };
+};
+const applyPageData = (data: PageData) => {
+  pageData.value = data;
+  const unfinished =
+    (data.status_counts[0] ?? 0) + (data.status_counts[1] ?? 0);
+  progress.value = data.total
+    ? Number(((1 - unfinished / data.total) * 100).toFixed(2))
+    : 0;
 };
 async function loadData(): Promise<PageData | null> {
   loading.value = true;
   return axios
     .get<{ result: PageData }>(Api.taskList)
     .then(function (response) {
-      pageData.value = response.data.result;
-
-      if (!response.data.result.total) {
-        progress.value = 0;
-      } else {
-        const rate =
-          ((response.data.result.status_counts[0] ?? 0) +
-            (response.data.result.status_counts[1] ?? 0)) /
-          response.data.result.total;
-        progress.value = Number((100 - rate * 100).toFixed(2));
-      }
+      applyPageData(response.data.result);
       return response.data.result;
     })
     .catch(function (error) {
@@ -533,11 +538,11 @@ const addIdentificationBtn = async (data: boolean) => {
   force.value = data;
   ElMessageBox.confirm(
     unref(force)
-      ? "Should we proceed with the full-scale testing?"
-      : "Should we continue with the incremental testing?",
-    "Warning",
+      ? "Start processing all images?"
+      : "Start processing pending images?",
+    unref(force) ? "Process all images" : "Process pending images",
     {
-      confirmButtonText: "OK",
+      confirmButtonText: "Start",
       cancelButtonText: "Cancel",
       type: "warning",
     }
@@ -574,31 +579,27 @@ const addIdentificationBtn = async (data: boolean) => {
 };
 const image_keys_Json = ref<Set<string>>(new Set());
 const selectimgKeyList = computed(() => Array.from(image_keys_Json.value));
-const imgKeyList = ref<(string | number)[]>([]);
+const imgKeyList = ref<string[]>([]);
 const addRecheckShow = ref(false);
+const imageCheckAction = ref<"Check" | "Recheck">("Recheck");
 const isAlone = ref(false);
+const closeRecheckDialog = () => {
+  addRecheckShow.value = false;
+  imgKeyList.value = [];
+};
 const recheckData = (data: ImageNode) => {
   isAlone.value = true;
   imgKeyList.value = data.image_key ? [data.image_key] : [];
+  imageCheckAction.value = data.status === 0 ? "Check" : "Recheck";
   addRecheckShow.value = true;
 };
-const submitRecheck = async (val: number) => {
-  if (val == 0) {
-    addRecheckShow.value = false;
-    imgKeyList.value = [];
-    return;
-  }
-  if (!unref(selectimgKeyList).length && !unref(imgKeyList).length) {
+const submitRecheck = async (imageKeys: readonly string[]) => {
+  const image_keys = [...imageKeys];
+  if (!image_keys.length) {
     ElMessage.warning("Please select the pictures that you want to recheck.");
     return;
   }
-  let image_keys = [];
-  if (unref(imgKeyList).length) {
-    image_keys = unref(imgKeyList);
-  } else {
-    image_keys = unref(selectimgKeyList);
-  }
-  addRecheckShow.value = false;
+  closeRecheckDialog();
   axios
     .post(Api.recheck, { image_keys: image_keys })
     .then(function (response) {
@@ -606,13 +607,9 @@ const submitRecheck = async (val: number) => {
         message: response.data.message,
         type: "success",
       });
-      addRecheckShow.value = false;
-      imgKeyList.value = [];
       loadData();
     })
     .catch((error) => {
-      addRecheckShow.value = false;
-      imgKeyList.value = [];
       const isNetworkErr = error.message === "Network Error";
       if (isNetworkErr) {
         ElMessage({
@@ -779,27 +776,18 @@ const exportDataXls = async () => {
 };
 
 var listTimer: any;
-let failCount = 0;
-const maxFailTimes = 3;
 let showErrorMsgFlag = true;
 onMounted(() => {
   loadData();
   listTimer = setInterval(() => {
     axios
-      .get(Api.taskList, {})
+      .get<{ result: PageData }>(Api.taskList)
       .then(function (response) {
-        failCount = 0;
-        if (!response.data.result.total) {
-          progress.value = 0;
-        } else {
-          const rate =
-            response.data.result.status_counts[0] / response.data.result.total;
-          progress.value = Number((100 - rate * 100).toFixed(2));
-        }
+        applyPageData(response.data.result);
+        showErrorMsgFlag = true;
       })
       .catch((error) => {
         const isNetworkErr = error.message === "Network Error";
-        failCount++;
         if (showErrorMsgFlag) {
           if (isNetworkErr) {
             ElMessage({
@@ -816,10 +804,6 @@ onMounted(() => {
             });
           }
           showErrorMsgFlag = false;
-        }
-        if (failCount >= maxFailTimes) {
-          clearInterval(listTimer!);
-          listTimer = null;
         }
       });
   }, 5000);

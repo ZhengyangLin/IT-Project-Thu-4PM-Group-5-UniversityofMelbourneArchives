@@ -58,7 +58,7 @@ UNIMELB_VERBOSE_PROMPT = True
 UNIMELB_CONFIG_PATH = PROJECT_DIR / "config.yaml"
 UNIMELB_LOG_DIR = UNIMELB_OCR_OUTPUT_ROOT / "logs"
 IMAGE_STATUS_FILE = UNIMELB_OCR_OUTPUT_ROOT / "unimelb_image_status.json"
-# Image statuses: 0 pending, 1 running, 2 completed, 3 failed.
+# Image statuses: 0 not submitted, 1 queued or running, 2 completed, 3 failed.
 IMAGE_STATUS_PENDING = 0
 IMAGE_STATUS_RUNNING = 1
 IMAGE_STATUS_COMPLETED = 2
@@ -293,7 +293,7 @@ class UnimelbServiceImpl(UnimelbService):
                             self._new_image_state(
                                 image,
                                 task_uuid,
-                                IMAGE_STATUS_PENDING,now,
+                                IMAGE_STATUS_RUNNING,now,
                             )
                         )
                         run_images.append(image)
@@ -1081,7 +1081,7 @@ class UnimelbServiceImpl(UnimelbService):
                 for image in selected_images:
                     self._image_statuses[self._image_key(image)] = (
                         self._new_image_state(
-                            image, task_uuid, IMAGE_STATUS_PENDING, now
+                            image, task_uuid, IMAGE_STATUS_RUNNING, now
                         )
                     )
                 try:

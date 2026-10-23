@@ -1,10 +1,10 @@
 <template>
   <div style="text-align: right; padding-bottom: 5px" v-if="isEdit">
-    <el-button type="success" @click="submit()">Review</el-button>
+    <el-button type="success" @click="submit()">Save review</el-button>
   </div>
   <div class="compare-root">
     <div class="compare-col left-col">
-      <div class="col-label">Annotation diagram</div>
+      <div class="col-label">Architectural drawing</div>
       <div class="scroll-wrap canvas-wrap" ref="containerRef">
         <canvas ref="fabricCanvasRef"></canvas>
         <div v-if="isLoading" class="canvas-loading">
@@ -23,7 +23,7 @@
       </div>
     </div>
     <div class="compare-col right-col">
-      <div class="col-label">Annotation information</div>
+      <div class="col-label">Metadata</div>
       <div class="list-message">
         <div
           class="item"
@@ -69,7 +69,7 @@
             </div>
             <div class="conf">Field source: {{ item.source }}</div>
             <div class="conf">
-              Structured reason code for field impermanent value:{{
+              Structured reason code for field missing value:{{
                 item.reason
               }}
             </div>
@@ -530,9 +530,9 @@ const resetAllBoxHighlight = () => {
 };
 
 const submit = () => {
-  ElMessageBox.confirm("Whether to confirm the audit?", "Warning", {
-    confirmButtonText: "Confirmation",
-    cancelButtonText: "cancel",
+  ElMessageBox.confirm("Save changes and mark this image as reviewed?", "Warning", {
+    confirmButtonText: "Confirm",
+    cancelButtonText: "Cancel",
     type: "warning",
   })
     .then(async () => {
