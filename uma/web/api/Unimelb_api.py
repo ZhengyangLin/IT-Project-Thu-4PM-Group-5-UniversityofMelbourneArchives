@@ -217,7 +217,7 @@ class UnimelbAPI(BaseAPI):
         self, request: UnimelbResultExportRequest,
     ) -> Response:
         try:
-            content = await self.service.export_ocr_results(request.image_keys)
+            content = await self.service.export_ocr_results(request.image_keys, status=request.status, folder=request.folder)
         except FileNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except UnimelbTaskRunningError as exc:

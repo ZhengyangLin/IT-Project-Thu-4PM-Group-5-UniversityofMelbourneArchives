@@ -78,7 +78,7 @@ ANCHORS: dict[str, list[str]] = {
     "draughtsperson": ["DRAWN", "DRAWN BY", "DFTSMN", "TRACED", "TRACED BY"],
     "drawing_number": ["DRAWING NO", "DRAWING No.", "DWG NO", "DRG NO",
                        "SHEET NO", "DRAWING NUMBER"],
-    "checked":        ["CHECKED", "APPROVED", "CHKD"],
+    "checked": ["CHECK", "CHECKED", "APPROVED", "CHKD"],
     "job_number":     ["JOB NO", "JOB NUMBER", "PROJECT NO"],
 }
 
@@ -102,6 +102,14 @@ DRAUGHTSPERSON_CONFLICT_RE = re.compile(r"""
       | DRG\b
       | SHEET\b
       | REVISION\b
+      | CHECK(?:ED)?\b
+      | CHEEK\b
+      | E\b
+      | CH\b
+      | CE\b
+      | (?:CE|E)\s*$
+      | H\b
+      | HE\b
     )
 """, re.IGNORECASE | re.VERBOSE)
 

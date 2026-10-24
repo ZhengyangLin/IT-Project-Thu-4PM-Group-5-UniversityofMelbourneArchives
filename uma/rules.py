@@ -195,10 +195,7 @@ def match_scale(
 
 
 # Find a valid date within the configured year range.
-def match_date(
-    tokens: list[Token],
-    cfg: RuleCfg
-) -> tuple[Token | None, float, str | None]:
+def match_date(tokens: list[Token], cfg: RuleCfg) -> tuple[Token | None, float]:
 
     lo, hi = cfg.year_range
 
@@ -217,47 +214,9 @@ def match_date(
         if not (lo <= year <= hi):
             continue
 
-        return t, 0.89, normalize_date(t.text, year)
+        return t, 0.89
 
-    return None, 0.0, None
-
-
-# Normalize recognized dates into a consistent format.
-def normalize_date(text: str, year: int) -> str:
-
-    months = {
-        "JAN": 1,
-        "FEB": 2,
-        "MAR": 3,
-        "APR": 4,
-        "MAY": 5,
-        "JUN": 6,
-        "JUL": 7,
-        "AUG": 8,
-        "SEP": 9,
-        "OCT": 10,
-        "NOV": 11,
-        "DEC": 12,
-    }
-
-    up = text.upper()
-
-    for k, v in months.items():
-        if k in up:
-            return f"{year:04d}-{v:02d}"
-
-    m = re.search(
-        r"\b(\d{1,2})\s*[./-]\s*(\d{1,2})\s*[./-]\s*\d{2,4}\b",
-        text,
-    )
-
-    if m:
-        d, mo = int(m.group(1)), int(m.group(2))
-
-        if 1 <= mo <= 12:
-            return f"{year:04d}-{mo:02d}-{d:02d}"
-
-    return str(year)
+    return None, 0.0
 
 
 # Match OCR text against the configured architect list.
@@ -548,13 +507,12 @@ def extract(
             rejected[name] = why
             return
 
+        if name == "date":
+            corrected = text
         locked[name] = FieldValue(
             name=name,
             tokens=[t.tid for t in toks],
-            verbatim=(
-                verbatim
-                or " ".join(t.text for t in toks)
-            ),
+            verbatim=text,
             corrected=corrected,
             correction_basis=(
                 basis if corrected else None
@@ -603,18 +561,10 @@ def extract(
             )
 
     # Extract date.
-    tok, s, norm = match_date(tokens, cfg)
+    tok, s = match_date(tokens, cfg)
 
     if tok and s >= cfg.lock_threshold:
-        lock(
-            "date",
-            tok,
-            s,
-            corrected=norm,
-            basis=(
-                "Recognized the month and year, then converted them to ISO format"
-            ),
-        )
+        lock("date", tok, s)
 
     # Extract architect.
     hits, s, norm = match_architect(

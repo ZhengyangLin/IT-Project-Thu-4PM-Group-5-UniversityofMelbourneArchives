@@ -1,10 +1,10 @@
 <template>
   <div style="text-align: right; padding-bottom: 5px" v-if="isEdit">
-    <el-button type="success" @click="submit()">Review</el-button>
+    <el-button type="success" @click="submit()">Save review</el-button>
   </div>
   <div class="compare-root">
     <div class="compare-col left-col">
-      <div class="col-label">Annotation diagram</div>
+      <div class="col-label">Architectural drawing</div>
       <div class="scroll-wrap canvas-wrap" ref="containerRef">
         <canvas ref="fabricCanvasRef"></canvas>
         <div v-if="isLoading" class="canvas-loading">
@@ -23,7 +23,7 @@
       </div>
     </div>
     <div class="compare-col right-col">
-      <div class="col-label">Annotation information</div>
+      <div class="col-label">Metadata</div>
       <div class="list-message">
         <div
           class="item"
@@ -50,7 +50,7 @@
               Final value:{{ item.value ?? "-" }}</span
             >
           </div>
-          <div class="field-meta">
+          <div v-if="props.imageManualReview == 0" class="field-meta">
             <div class="conf">
               Confidence:{{ formatConfidence(item.confidence) }}
             </div>
@@ -69,7 +69,7 @@
             </div>
             <div class="conf">Field source: {{ item.source }}</div>
             <div class="conf">
-              Structured reason code for field impermanent value:{{
+              Structured reason code for field missing value:{{
                 item.reason
               }}
             </div>
@@ -85,6 +85,9 @@
             >
               {{ item.value ? item.review_status : "No data was found" }}
             </span>
+          </div>
+          <div v-else-if="props.imageManualReview === 1" class="field-meta">
+            <span class="status-tag tag-reviewed">Reviewed</span>
           </div>
         </div>
         <div v-if="detecBoxEntries.length === 0" class="empty-item">
@@ -147,6 +150,7 @@ const props = withDefaults(
     image_key?: string;
     confThreshold?: number;
     isEdit?: boolean;
+    imageManualReview?: number;
   }>(),
   {
     urlImage: undefined,
@@ -155,13 +159,14 @@ const props = withDefaults(
     image_key: "",
     confThreshold: 0.3,
     isEdit: false,
+    imageManualReview: 0,
   }
 );
 const emit = defineEmits<{
   saved: [imageKey: string];
 }>();
 enum Api {
-  manualReview = "http://127.0.0.1:8000/Unimelb/ocr-results/manual-review",
+  manualReview = "/Unimelb/ocr-results/manual-review",
 }
 const fabricCanvasRef = ref<HTMLCanvasElement | null>(null);
 const containerRef = ref<HTMLDivElement | null>(null);
@@ -345,7 +350,7 @@ const loadImageAndBox = async () => {
     });
     cv.renderAll();
   } catch (err) {
-   
+
     loadError.value = true;
   } finally {
     isLoading.value = false;
@@ -525,9 +530,9 @@ const resetAllBoxHighlight = () => {
 };
 
 const submit = () => {
-  ElMessageBox.confirm("Whether to confirm the audit?", "Warning", {
-    confirmButtonText: "Confirmation",
-    cancelButtonText: "cancel",
+  ElMessageBox.confirm("Save changes and mark this image as reviewed?", "Warning", {
+    confirmButtonText: "Confirm",
+    cancelButtonText: "Cancel",
     type: "warning",
   })
     .then(async () => {
@@ -728,6 +733,10 @@ onUnmounted(() => {
   .tag-review {
     background: rgba(230, 162, 60, 0.15);
     color: #e6a23c;
+  }
+  .tag-reviewed {
+    background: rgba(64, 158, 255, 0.15);
+    color: #409eff;
   }
   .tag-red {
     background: rgba(230, 162, 60, 0.15);

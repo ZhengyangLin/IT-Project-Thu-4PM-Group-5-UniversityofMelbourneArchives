@@ -1,8 +1,9 @@
 from __future__ import annotations
-
+import gc
 from dataclasses import dataclass, field
 import logging
 import os
+import sys
 from typing import Any
 
 from ...unimelb_result_codec import extract_ocr_result
@@ -32,6 +33,15 @@ class OcrImageOutcome:
 def initialize_ocr_worker(config_path: str,engines: tuple[str, ...],verbose_prompt: bool,log_dir: str | None = None,) -> None:
     global _PIPELINE
 
+    os.environ.update({
+        "FLAGS_allocator_strategy": "auto_growth",
+        "FLAGS_fraction_of_gpu_memory_to_use": "0.3",
+        "FLAGS_initial_gpu_memory_in_mb": "512",
+        "FLAGS_reallocate_gpu_memory_in_mb": "128",
+        "FLAGS_cudnn_exhaustive_search": "0",
+        "FLAGS_conv_workspace_size_limit": "64",
+    })
+
     os.environ.setdefault("FLAGS_use_mkldnn", "0")
     os.environ.setdefault("FLAGS_enable_pir_api", "0")
     # os.environ.setdefault("PADDLE_PDX_CPU_NUM_THREADS", "1")
@@ -53,6 +63,20 @@ def initialize_ocr_worker(config_path: str,engines: tuple[str, ...],verbose_prom
     _PIPELINE = Pipeline(cfg, verbose_prompt=verbose_prompt)
     log.info("OCR worker initialized: pid=%s engines=%s", os.getpid(), engines)
 
+
+def _clear_paddle_gpu_cache() -> None:
+    try:
+        paddle = sys.modules.get("paddle")
+        if paddle is None or not paddle.is_compiled_with_cuda():
+            return
+        if paddle.device.cuda.device_count() == 0:
+            return
+        paddle.device.synchronize("gpu:0")
+        gc.collect()
+        paddle.device.cuda.empty_cache()
+        log.info("Paddle GPU cache cleanup finished: pid=%s device=gpu:0", os.getpid())
+    except Exception:
+        log.warning("Paddle GPU cache cleanup failed: pid=%s", os.getpid(), exc_info=True)
 
 def process_ocr_image(job: OcrImageJob) -> OcrImageOutcome:
     if _PIPELINE is None:
@@ -87,6 +111,8 @@ def process_ocr_image(job: OcrImageJob) -> OcrImageOutcome:
             ok=False,
             error=f"{type(exc).__name__}: {exc}",
         )
+    finally:
+        _clear_paddle_gpu_cache()
 
 
 def write_batch_summary(output_dir: str, rows: list[dict[str, Any]]) -> str:

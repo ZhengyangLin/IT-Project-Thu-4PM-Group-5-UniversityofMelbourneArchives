@@ -22,7 +22,7 @@
           <el-icon><Picture /></el-icon>
         </div>
         <div class="stat-content">
-          <div class="stat-label">All the pictures</div>
+          <div class="stat-label">All images</div>
           <div class="stat-value">{{ pageData.total }}</div>
         </div>
       </div>
@@ -35,7 +35,7 @@
           <el-icon><Clock /></el-icon>
         </div>
         <div class="stat-content">
-          <div class="stat-label">To be tested</div>
+          <div class="stat-label">Pending</div>
           <div class="stat-value">{{ pageData.status_counts[0] }}</div>
         </div>
       </div>
@@ -48,7 +48,7 @@
           <el-icon><Loading /></el-icon>
         </div>
         <div class="stat-content">
-          <div class="stat-label">In the process of testing</div>
+          <div class="stat-label">Processing</div>
           <div class="stat-value">{{ pageData.status_counts[1] }}</div>
         </div>
       </div>
@@ -61,7 +61,7 @@
           <el-icon><CircleCheck /></el-icon>
         </div>
         <div class="stat-content">
-          <div class="stat-label">Successfully</div>
+          <div class="stat-label">Success</div>
           <div class="stat-value">{{ pageData.status_counts[2] }}</div>
         </div>
       </div>
@@ -74,7 +74,7 @@
           <el-icon><CircleClose /></el-icon>
         </div>
         <div class="stat-content">
-          <div class="stat-label">Failure</div>
+          <div class="stat-label">Failed</div>
           <div class="stat-value">{{ pageData.status_counts[3] }}</div>
         </div>
       </div>
@@ -89,7 +89,7 @@
         <div class="folder-list-wrap">
           <div class="folder-item header-row">
             <div class="col-name">Folder name</div>
-            <div class="col-count">Images Number</div>
+            <div class="col-count">Image count</div>
           </div>
           <div
             class="folder-item"
@@ -113,7 +113,7 @@
               class="btn"
               type="primary"
               :icon="Refresh"
-              @click="submitRecheck(1)"
+              @click="submitRecheck(selectimgKeyList)"
               >Batch recheck</el-button
             >
             <el-button
@@ -129,8 +129,15 @@
 
         <div class="img-list-wrap">
           <div class="img-row header-row">
-            <div class="col-select">select</div>
-            <div class="col-preview">preview</div>
+            <div class="col-select">
+              <el-checkbox
+                :model-value="AllRowData"
+                @click="AllcheckRow()"
+                label=""
+                size="small"
+              />
+            </div>
+
             <div class="col-folder">Folder</div>
             <div class="col-nodeid">node_id</div>
             <div class="col-imgname">Image name</div>
@@ -148,13 +155,13 @@
             >
               <div class="col-select">
                 <el-checkbox
-                  :model-value="imgKeyList.includes(row.image_key)"
+                  :model-value="selectimgKeyList.includes(row.image_key)"
                   @click="checkRow(row)"
                   label=""
                   size="small"
                 />
               </div>
-              <div class="col-preview"></div>
+
               <div class="col-folder">{{ row.folder }}</div>
               <div class="col-nodeid">{{ row.node_id }}</div>
               <div class="col-imgname" :title="row.image_name">
@@ -198,12 +205,12 @@
                 >
                 <el-button
                   class="btn"
-                  type="warning"
+                  :type="row.status === 0 ? 'primary' : 'warning'"
                   size="small"
                   :icon="Aim"
                   @click="recheckData(row)"
                   v-if="row.status != 1"
-                  >Recheck</el-button
+                  >{{ row.status === 0 ? "Check" : "Recheck" }}</el-button
                 >
               </div>
             </div>
@@ -279,13 +286,20 @@
         </div>
       </div>
     </div>
-    <el-dialog v-model="addRecheckShow" title="Testing" width="500">
-      <el-form> Are you sure to retest? </el-form>
+    <el-dialog
+      v-model="addRecheckShow"
+      :title="imageCheckAction"
+      width="500"
+      @close="closeRecheckDialog"
+    >
+      <el-form>
+        Are you sure you want to {{ imageCheckAction.toLowerCase() }} this image?
+      </el-form>
       <template #footer>
         <div class="dialog-footer">
-          <el-button @click="submitRecheck(0)">Cancel</el-button>
-          <el-button type="primary" @click="submitRecheck(1)">
-            Submit
+          <el-button @click="closeRecheckDialog">Cancel</el-button>
+          <el-button type="primary" @click="submitRecheck(imgKeyList)">
+            {{ imageCheckAction }}
           </el-button>
         </div>
       </template>
@@ -293,7 +307,7 @@
     <el-dialog
       v-model="innerVisible"
       width="90%"
-      title="Test Comparison"
+      title="Extraction results"
       @open="handleDialogOpen"
     >
       <div>
@@ -303,6 +317,7 @@
           :thumb-url-image="inspectImg.image_url"
           :detecBoxs="inspectImg.result"
           :image_key="inspectImg.image_key"
+          :image-manual-review="inspectImg.manual_reviewed"
           :conf-threshold="0.01"
           :isEdit="isEdit"
           @saved="handleReviewSaved"
@@ -313,7 +328,15 @@
   </div>
 </template>
 <script setup lang="ts">
-import { ref, onMounted, computed, onUnmounted, unref, nextTick } from "vue";
+import {
+  ref,
+  onMounted,
+  computed,
+  onUnmounted,
+  unref,
+  nextTick,
+  watch,
+} from "vue";
 
 import {
   DataAnalysis,
@@ -359,27 +382,18 @@ interface PageData {
 interface InspectImage {
   image_url?: string;
   image_key?: string;
+  manual_reviewed?: number;
   result?: Record<string, any>;
 }
 
-interface SaveFileWritable {
-  write(data: unknown): Promise<void>;
-  close(): Promise<void>;
-}
-type SaveFilePickerWindow = Window & {
-  showSaveFilePicker(options?: {
-    suggestedName?: string;
-    types?: { description?: string; accept?: Record<string, string[]> }[];
-  }): Promise<{ createWritable(): Promise<SaveFileWritable> }>;
-};
-
-const loading = ref(false);
+const AllRowData = ref<boolean>(false);
+const loading = ref<boolean>(false);
 enum Api {
-  taskList = "http://127.0.0.1:8000/Unimelb/ImageSelect",
-  createTask = "http://127.0.0.1:8000/Unimelb/ocr-tasks",
-  recheck = "http://127.0.0.1:8000/Unimelb/ocr-tasks/rerun",
-  manualReview = "http://127.0.0.1:8000/Unimelb/ocr-results/manual-review",
-  exportData = "http://127.0.0.1:8000/Unimelb/ocr-results/export",
+  taskList = "/Unimelb/ImageSelect",
+  createTask = "/Unimelb/ocr-tasks",
+  recheck = "/Unimelb/ocr-tasks/rerun",
+  manualReview = "/Unimelb/ocr-results/manual-review",
+  exportData = "/Unimelb/ocr-results/export",
 }
 
 const pageData = ref<PageData>({
@@ -397,39 +411,48 @@ const pageData = ref<PageData>({
 });
 
 const folderList = computed(() => {
-  const folders = pageData.value.folders || {};
-  return Object.entries(folders).map(([folderName, count]) => ({
-    folderName,
+  let list = pageData.value.images || [];
+  if (statusValue.value !== null) {
+    list = list.filter((item) => item.status === statusValue.value);
+  }
+  const counter = new Map<string, number>();
+  for (const img of list?? []) {
+      const folder = img.folder ?? "Unknown folder";
+      counter.set(folder, (counter.get(folder) ?? 0) + 1);
+  }
+
+  const counterJson = Array.from(counter, ([folder, count]) => ({
+   folderName: folder,
     count,
-  }));
+  })).sort((a, b) => a.folderName.localeCompare(b.folderName));
+
+   return counterJson
+
 });
 
 const getStatusTag = (status: number) => {
   const map: Record<number, { text: string; cls: string }> = {
-    0: { text: "To be tested", cls: "tag-wait" },
-    1: { text: "In the process of testing", cls: "tag-running" },
-    2: { text: "Completed", cls: "tag-success" },
-    3: { text: "Failure", cls: "tag-fail" },
+    0: { text: "Pending", cls: "tag-wait" },
+    1: { text: "Processing", cls: "tag-running" },
+    2: { text: "Success", cls: "tag-success" },
+    3: { text: "Failed", cls: "tag-fail" },
   };
   return map[status] || { text: "Unknown", cls: "tag-unknown" };
 };
-
+const applyPageData = (data: PageData) => {
+  pageData.value = data;
+  const unfinished =
+    (data.status_counts[0] ?? 0) + (data.status_counts[1] ?? 0);
+  progress.value = data.total
+    ? Number(((1 - unfinished / data.total) * 100).toFixed(2))
+    : 0;
+};
 async function loadData(): Promise<PageData | null> {
   loading.value = true;
   return axios
     .get<{ result: PageData }>(Api.taskList)
     .then(function (response) {
-      pageData.value = response.data.result;
-
-      if (!response.data.result.total) {
-        progress.value = 0;
-      } else {
-        const rate =
-          ((response.data.result.status_counts[0] ?? 0) +
-            (response.data.result.status_counts[1] ?? 0)) /
-          response.data.result.total;
-        progress.value = Number((100 - rate * 100).toFixed(2));
-      }
+      applyPageData(response.data.result);
       return response.data.result;
     })
     .catch(function (error) {
@@ -515,11 +538,11 @@ const addIdentificationBtn = async (data: boolean) => {
   force.value = data;
   ElMessageBox.confirm(
     unref(force)
-      ? "Should we proceed with the full-scale testing?"
-      : "Should we continue with the incremental testing?",
-    "Warning",
+      ? "Start processing all images?"
+      : "Start processing pending images?",
+    unref(force) ? "Process all images" : "Process pending images",
     {
-      confirmButtonText: "OK",
+      confirmButtonText: "Start",
       cancelButtonText: "Cancel",
       type: "warning",
     }
@@ -554,37 +577,39 @@ const addIdentificationBtn = async (data: boolean) => {
     })
     .catch(() => {});
 };
-
-const imgKeyList = ref<(string | number)[]>([]);
+const image_keys_Json = ref<Set<string>>(new Set());
+const selectimgKeyList = computed(() => Array.from(image_keys_Json.value));
+const imgKeyList = ref<string[]>([]);
 const addRecheckShow = ref(false);
+const imageCheckAction = ref<"Check" | "Recheck">("Recheck");
 const isAlone = ref(false);
+const closeRecheckDialog = () => {
+  addRecheckShow.value = false;
+  imgKeyList.value = [];
+};
 const recheckData = (data: ImageNode) => {
   isAlone.value = true;
   imgKeyList.value = data.image_key ? [data.image_key] : [];
+  imageCheckAction.value = data.status === 0 ? "Check" : "Recheck";
   addRecheckShow.value = true;
 };
-const submitRecheck = async (val: number) => {
-  if (val == 0) {
-    addRecheckShow.value = false;
-    return;
-  }
-
-  if (!unref(imgKeyList).length) {
+const submitRecheck = async (imageKeys: readonly string[]) => {
+  const image_keys = [...imageKeys];
+  if (!image_keys.length) {
     ElMessage.warning("Please select the pictures that you want to recheck.");
     return;
   }
-  addRecheckShow.value = false;
+  closeRecheckDialog();
   axios
-    .post(Api.recheck, { image_keys: unref(imgKeyList) })
+    .post(Api.recheck, { image_keys: image_keys })
     .then(function (response) {
       ElMessage({
         message: response.data.message,
         type: "success",
       });
-
       loadData();
     })
-    .catch(function (error) {
+    .catch((error) => {
       const isNetworkErr = error.message === "Network Error";
       if (isNetworkErr) {
         ElMessage({
@@ -603,10 +628,43 @@ const submitRecheck = async (val: number) => {
 };
 const checkRow = (data: ImageNode) => {
   const key = data.image_key;
-  const index = imgKeyList.value.indexOf(key);
-  index > -1 ? imgKeyList.value.splice(index, 1) : imgKeyList.value.push(key);
+  const set = image_keys_Json.value;
+  if (set.has(key)) {
+    set.delete(key);
+  } else {
+    set.add(key);
+  }
+  image_keys_Json.value = new Set(set);
 };
+const AllcheckRow = () => {
+  const pageKeys = pageImageList.value.map((i) => i.image_key);
+  if (pageKeys.length === 0) return;
+  const set = image_keys_Json.value;
+  const isAllSelected =
+    pageKeys.length > 0 && pageKeys.every((k) => set.has(k));
 
+  if (isAllSelected) {
+    pageKeys.forEach((k) => set.delete(k));
+  } else {
+    pageKeys.forEach((k) => set.add(k));
+  }
+
+  image_keys_Json.value = new Set(set);
+  AllRowData.value = !isAllSelected;
+};
+watch(
+  [() => pageImageList.value, () => image_keys_Json.value],
+  () => {
+    const pageKeys = pageImageList.value.map((i) => i.image_key);
+    if (pageKeys.length === 0) {
+      AllRowData.value = false;
+      return;
+    }
+    const set = image_keys_Json.value;
+    AllRowData.value = pageKeys.every((k) => set.has(k));
+  },
+  { immediate: true }
+);
 const innerVisible = ref(false);
 const inspectImg = ref<InspectImage>({
   result: {},
@@ -625,11 +683,7 @@ const editResult = (data: ImageNode) => {
 
 const handleReviewSaved = async (imageKey: string) => {
   const data = await loadData();
-  if (
-    !data ||
-    !innerVisible.value ||
-    inspectImg.value.image_key !== imageKey
-  ) {
+  if (!data || !innerVisible.value || inspectImg.value.image_key !== imageKey) {
     return;
   }
 
@@ -638,79 +692,102 @@ const handleReviewSaved = async (imageKey: string) => {
     inspectImg.value = latest;
   }
 };
-
 const exportDataXls = async () => {
+  const isAllFilter = unref(selectimgKeyList).length === 0;
+  const image_keys: string[] = isAllFilter
+    ? filterImageList.value.map((item) => item.image_key)
+    : [...unref(selectimgKeyList)];
+
+  if (image_keys.length === 0) {
+    ElMessage({ message: "There are no exportable data.", type: "warning" });
+    return;
+  }
+  const selectedSet = new Set(image_keys);
+  const counter = new Map<string, number>();
+  for (const img of pageData.value?.images ?? []) {
+    if (selectedSet.has(img.image_key)) {
+      const folder = img.folder ?? "Unknown folder";
+      counter.set(folder, (counter.get(folder) ?? 0) + 1);
+    }
+  }
+  const counterJson = Array.from(counter, ([folder, count]) => ({
+    folder,
+    count,
+  })).sort((a, b) => b.count - a.count);
+  const total = counterJson.reduce((sum, item) => sum + item.count, 0);
+  const folderText = counterJson
+    .map((item) => `${item.folder} (${item.count})`)
+    .join(", ");
+  try {
+    await ElMessageBox.confirm(
+      `Selected ${total} image(s) from ${counterJson.length} folder(s):\n` +
+        `${folderText}\n\n` +
+        `Do you want to continue exporting?`,
+      "Warning",
+      {
+        confirmButtonText: "OK",
+        cancelButtonText: "Cancel",
+        type: "warning",
+        customClass: "delete-confirm-msg",
+      }
+    );
+  } catch {
+    return;
+  }
   try {
     const res = await axios({
       method: "post",
       url: Api.exportData,
-      data: {
-        image_keys: unref(imgKeyList),
-      },
+      data: { image_keys },
       responseType: "blob",
     });
-
-    if (res.status != 200) {
-      ElMessage.error(res.statusText);
+    if (res.status !== 200) {
+      ElMessage.error(res.statusText || "Export failed");
+      return;
     }
-    const blob = res.data;
+    if (res.data.type === "application/json") {
+      const text = await res.data.text();
+      ElMessage.error(JSON.parse(text).message ?? "Export failed");
+      return;
+    }
     const disposition = String(res.headers["content-disposition"] ?? "");
-    let fileName = "export.xlsx";
-    if (disposition) {
-      const reg = /filename="([^"]+)"/;
-      const result = disposition.match(reg);
-      if (result && result[1]) {
-        fileName = result[1];
-      }
-    }
-    const fileHandle = await (
-      window as unknown as SaveFilePickerWindow
-    ).showSaveFilePicker({
-      suggestedName: fileName,
-      types: [
-        {
-          description: "Excel",
-          accept: {
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
-              [".xlsx"],
-          },
-        },
-      ],
-    });
+    const matched = disposition.match(/filename="?([^";]+)"?/i);
+    const fileName = matched?.[1] || "export.xlsx";
+    const downloadUrl = URL.createObjectURL(res.data);
+    const downloadLink = document.createElement("a");
 
-    const writable = await fileHandle.createWritable();
-    await writable.write(blob);
-    await writable.close();
-    // ElMessage.success("Exporting and saving completed");
-  } catch (err: any) {
-    if (err.name === "AbortError") {
-    } else {
-      ElMessage.error(err);
+    try {
+      downloadLink.href = downloadUrl;
+      downloadLink.download = fileName;
+      document.body.appendChild(downloadLink);
+      downloadLink.click();
+    } finally {
+      downloadLink.remove();
+      // Give the browser time to receive the download before releasing the URL.
+      window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 60_000);
     }
+
+    ElMessage({ type: "success", message: "Download started" });
+  } catch (err: any) {
+    if (err?.name === "AbortError") return;
+    console.error("[exportDataXls]", err);
+    ElMessage.error("Export failed. Please try again.");
   }
 };
+
 var listTimer: any;
-let failCount = 0;
-const maxFailTimes = 3;
 let showErrorMsgFlag = true;
 onMounted(() => {
   loadData();
   listTimer = setInterval(() => {
     axios
-      .get(Api.taskList, {})
+      .get<{ result: PageData }>(Api.taskList)
       .then(function (response) {
-        failCount = 0;
-        if (!response.data.result.total) {
-          progress.value = 0;
-        } else {
-          const rate =
-            response.data.result.status_counts[0] / response.data.result.total;
-          progress.value = Number((100 - rate * 100).toFixed(2));
-        }
+        applyPageData(response.data.result);
+        showErrorMsgFlag = true;
       })
       .catch((error) => {
         const isNetworkErr = error.message === "Network Error";
-        failCount++;
         if (showErrorMsgFlag) {
           if (isNetworkErr) {
             ElMessage({
@@ -727,10 +804,6 @@ onMounted(() => {
             });
           }
           showErrorMsgFlag = false;
-        }
-        if (failCount >= maxFailTimes) {
-          clearInterval(listTimer!);
-          listTimer = null;
         }
       });
   }, 5000);

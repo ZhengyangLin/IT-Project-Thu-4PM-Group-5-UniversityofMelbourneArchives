@@ -48,7 +48,7 @@ from ...workers.Unimelb_ocr_worker import (
 # OCR input paths, supported image formats, and output settings.
 PROJECT_DIR = Path(__file__).resolve().parents[4]
 PLAN_SAMPLE_DIR = PROJECT_DIR / "plan_sample"
-OCR_FOLDERS = ("YFA_cabana", "YFA_state_government")
+EXCLUDED_IMAGE_FOLDERS = frozenset({"bates_smart_mccutcheon"})
 IMAGE_EXTENSIONS = {".tif", ".tiff", ".jpg", ".jpeg", ".png", ".bmp", ".webp",}
 log = logging.getLogger(__name__)
 UNIMELB_OCR_ENGINES = ("paddle",)
@@ -58,7 +58,7 @@ UNIMELB_VERBOSE_PROMPT = True
 UNIMELB_CONFIG_PATH = PROJECT_DIR / "config.yaml"
 UNIMELB_LOG_DIR = UNIMELB_OCR_OUTPUT_ROOT / "logs"
 IMAGE_STATUS_FILE = UNIMELB_OCR_OUTPUT_ROOT / "unimelb_image_status.json"
-# Image statuses: 0 pending, 1 running, 2 completed, 3 failed.
+# Image statuses: 0 not submitted, 1 queued or running, 2 completed, 3 failed.
 IMAGE_STATUS_PENDING = 0
 IMAGE_STATUS_RUNNING = 1
 IMAGE_STATUS_COMPLETED = 2
@@ -136,8 +136,19 @@ class UnimelbServiceImpl(UnimelbService):
     async def get_image_select(self) -> UnimelbImageSelectResponse:
         self._validate_folders()
         paths = await asyncio.to_thread(self._collect_images)
-        counts = {name.upper(): 0 for name in OCR_FOLDERS}
+
+        unique_images = {self._image_key(image): image for image in paths}
+        missing_candidates = [
+            image for image_key, image in unique_images.items()
+            if image_key not in self._image_statuses
+        ]
+        counts = {folder.name.upper(): 0 for folder in self._image_folders()}
         status_counts = {"0": 0, "1": 0, "2": 0, "3": 0}
+
+        if missing_candidates:
+            with self._tasks_lock:
+                self._sync_missing_image_states_locked(missing_candidates)
+
         with self._tasks_lock:
             # Use a status snapshot to keep the response consistent during concurrent updates.
             statuses = deepcopy(self._image_statuses)
@@ -146,7 +157,7 @@ class UnimelbServiceImpl(UnimelbService):
             relative = path.relative_to(PLAN_SAMPLE_DIR)
             folder = relative.parts[0].upper()
             node_id = path.parent.name
-            counts[folder] += 1
+            counts[folder] = counts.get(folder, 0) + 1
             image_key = f"{node_id}/{path.name}"
             image_status = statuses.get(image_key, {})
             status = self._normalize_image_status(
@@ -181,7 +192,7 @@ class UnimelbServiceImpl(UnimelbService):
         )
 
     def resolve_image(self, folder: str, node_id: str, image_name: str,) -> Path | None:
-        folder_map = {name.upper(): name for name in OCR_FOLDERS}
+        folder_map = {path.name.upper(): path for path in self._image_folders()}
         actual_folder = folder_map.get(folder.upper())
         if actual_folder is None:
             return None
@@ -189,7 +200,7 @@ class UnimelbServiceImpl(UnimelbService):
             return None
 
         # Resolve paths and ensure the image stays within the allowed directory.
-        allowed_root = (PLAN_SAMPLE_DIR / actual_folder).resolve()
+        allowed_root = actual_folder.resolve()
         candidate = (allowed_root / node_id / image_name).resolve()
         try:
             candidate.relative_to(allowed_root)
@@ -282,7 +293,7 @@ class UnimelbServiceImpl(UnimelbService):
                             self._new_image_state(
                                 image,
                                 task_uuid,
-                                IMAGE_STATUS_PENDING,now,
+                                IMAGE_STATUS_RUNNING,now,
                             )
                         )
                         run_images.append(image)
@@ -358,13 +369,50 @@ class UnimelbServiceImpl(UnimelbService):
             started=True,
         )
 
-    def _collect_images(self) -> list[Path]:
+    @staticmethod
+    def _image_folders() -> list[Path]:
+        if not PLAN_SAMPLE_DIR.is_dir():
+            return []
         return [
+            folder for folder in sorted(PLAN_SAMPLE_DIR.iterdir(), key=lambda path: path.name)
+            if folder.is_dir()
+               and folder.name.casefold() not in EXCLUDED_IMAGE_FOLDERS
+        ]
+
+
+    def _collect_images(self) -> list[Path]:
+        images = [
             path
-            for name in OCR_FOLDERS
-            for path in sorted((PLAN_SAMPLE_DIR / name).rglob("*"))
+            for folder in self._image_folders()
+            for path in sorted(folder.rglob("*"))
             if path.is_file() and path.suffix.lower() in IMAGE_EXTENSIONS
         ]
+        return sorted(images, key=self._image_sort_key)
+
+
+    @classmethod
+    def _image_sort_key(cls, image: Path) -> tuple[str, str]:
+        return image.relative_to(PLAN_SAMPLE_DIR).parts[0], cls._image_key(image)
+
+
+    def _sync_missing_image_states_locked(self, images: list[Path]) -> None:
+        updated_at = self._now_ms()
+        missing = {
+            self._image_key(image): self._new_image_state(
+                image, UNIMELB_SHARED_TASK_UUID, IMAGE_STATUS_PENDING, updated_at,
+            )
+            for image in images
+            if self._image_key(image) not in self._image_statuses
+        }
+        if not missing:
+            return
+        self._image_statuses.update(missing)
+        try:
+            self._persist_image_statuses_locked()
+        except OSError:
+            for key in missing:
+                self._image_statuses.pop(key, None)
+            raise
 
     # Rebuild the shared task from image statuses; the caller must hold the task lock.
     def _restore_shared_task_locked(self, images: list[Path],) -> dict[str, Any] | None:
@@ -481,12 +529,11 @@ class UnimelbServiceImpl(UnimelbService):
 
     @staticmethod
     def _validate_folders() -> None:
-        missing = [
-            name for name in OCR_FOLDERS
-            if not (PLAN_SAMPLE_DIR / name).is_dir()
-        ]
-        if missing:
-            raise FileNotFoundError("OCR image directories not found: " + ", ".join(missing))
+        if not PLAN_SAMPLE_DIR.is_dir():
+            raise FileNotFoundError(
+                f"OCR image root directory not found: {PLAN_SAMPLE_DIR}"
+            )
+
 
     async def _run_ocr_task(self,task_uuid: str,images: list[Path],output_dir: Path,*,reservation_token: object,write_batch_summary: bool = True,) -> None:
         image_keys = {self._image_key(image) for image in images}
@@ -822,7 +869,7 @@ class UnimelbServiceImpl(UnimelbService):
                 if ((owned_image_keys is None or image_key in owned_image_keys)
                     and state.get("task_uuid") == task_uuid
                     and self._normalize_image_status(state.get("status"))
-                    in {IMAGE_STATUS_PENDING, IMAGE_STATUS_RUNNING}
+                    in {IMAGE_STATUS_RUNNING}
                 ):
                     state.update(
                         status=IMAGE_STATUS_FAILED,
@@ -1034,7 +1081,7 @@ class UnimelbServiceImpl(UnimelbService):
                 for image in selected_images:
                     self._image_statuses[self._image_key(image)] = (
                         self._new_image_state(
-                            image, task_uuid, IMAGE_STATUS_PENDING, now
+                            image, task_uuid, IMAGE_STATUS_RUNNING, now
                         )
                     )
                 try:
@@ -1195,21 +1242,55 @@ class UnimelbServiceImpl(UnimelbService):
             if self._closing and self._ocr_executor is None:
                 return
             self._closing = True
+            executor = self._ocr_executor
+            self._ocr_executor = None
+
+        background_tasks = tuple(self._background_tasks)
+        for task in background_tasks:
+            task.cancel()
+        try:
+            if executor is not None:
+                await asyncio.to_thread(
+                    self._kill_ocr_executor, executor
+                )
+        finally:
+            if background_tasks:
+                await asyncio.gather(*background_tasks, return_exceptions=True)
 
     # Export selected OCR results to Excel, preserving confidence values
     # for unreviewed images and preventing conflicts with running tasks.
-    def _export_ocr_results(self, image_keys: list[str] | None) -> bytes:
+    def _export_ocr_results(self, image_keys: list[str] | None,status: int | None = None, folder: str | None = None,) -> bytes:
+        if status == IMAGE_STATUS_RUNNING:
+            raise UnimelbTaskRunningError("Images currently being processed cannot be exported (status=1)")
+
         with self._tasks_lock:
             selected_keys = list(dict.fromkeys(image_keys or self._image_statuses))
+            selected_keys = sorted(set(image_keys or self._image_statuses))
             for image_key in selected_keys:
                 if image_key not in self._image_statuses:
                     raise FileNotFoundError(f"The requested image_key does not exist in status data: {image_key}")
 
+        if status is not None:
+            selected_keys = [
+                key for key in selected_keys
+                if self._normalize_image_status(self._image_statuses[key].get("status")) == status
+            ]
+
         catalog = {self._image_key(image): image for image in self._collect_images()}
+
+        if folder:
+            selected_keys = [
+                key for key in selected_keys
+                if key in catalog
+                   and catalog[key].relative_to(PLAN_SAMPLE_DIR).parts[0].casefold() == folder.casefold()
+            ]
+
         for image_key in selected_keys:
             image = catalog.get(image_key)
             if image is None or not image.is_file():
                 raise FileNotFoundError(f"The requested image does not exist: {image_key}")
+
+        selected_keys.sort(key=lambda key: self._image_sort_key(catalog[key]))
 
         reservation_token = object()
         with self._rerun_image_owners_lock:
@@ -1330,5 +1411,28 @@ class UnimelbServiceImpl(UnimelbService):
         finally:
             workbook.close()
 
-    async def export_ocr_results(self, image_keys: list[str] | None) -> bytes:
-        return await asyncio.to_thread(self._export_ocr_results, image_keys)
+    async def export_ocr_results(
+            self, image_keys: list[str] | None,
+            status: int | None = None, folder: str | None = None,
+    ) -> bytes:
+        return await asyncio.to_thread(
+            self._export_ocr_results, image_keys, status=status, folder=folder,
+        )
+
+    @staticmethod
+    def _kill_ocr_executor(executor: ProcessPoolExecutor) -> None:
+        kill_workers = getattr(executor, "kill_workers", None)
+        if kill_workers is not None:
+            kill_workers()
+            return
+
+        processes = tuple((executor._processes or {}).values())
+        try:
+            for process in processes:
+                if process.is_alive():
+                    try:
+                        process.kill()
+                    except ProcessLookupError:
+                        pass
+        finally:
+            executor.shutdown(wait=True, cancel_futures=True)
