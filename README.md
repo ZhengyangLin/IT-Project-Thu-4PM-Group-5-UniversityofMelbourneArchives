@@ -13,7 +13,7 @@ The system uses local deployment. Users access the frontend through a browser, w
 - Batch processing and recheck: Process pending images and recheck individual images or multiple selected images.
 - Manual review: Review recognition results against the original image, edit fields, and save the review results.
 - Export: Export results for selected images or images within the current filters to an Excel file.
-- Optional large language model assistance: Use the configured external large language model API to assist with field extraction and error correction. This feature can also be disabled.
+- Large language model assistance: Use the configured external large language model API to assist with field extraction and error correction.
 
 ## System Requirements
 
@@ -35,7 +35,7 @@ For Windows and Ubuntu.
 
 ## 1. Download the Project
 
-Open the [project download page](https://github.com/ZhengyangLin/IT-Project-Thu-4PM-Group-5-UniversityofMelbourneArchives), click Code → Download ZIP, and extract the downloaded archive.
+Open the [project Releases page](https://github.com/ZhengyangLin/IT-Project-Thu-4PM-Group-5-UniversityofMelbourneArchives/releases), select a release, download Source code (zip) under Assets, and extract the downloaded archive.
 
 ## 2. Install Software
 
@@ -158,6 +158,18 @@ The first run requires an internet connection to download the models.
 Press Ctrl+C in each terminal window.
 
 Next time, you only need to follow Step 7.
+
+## Pre-deployment Checks and Potential Issue Resolution
+
+To reduce potential deployment issues, check dependency versions, port availability, and network connectivity before deployment, and address common issues as follows.
+
+- **Frontend port already in use:** If `5173` is occupied by another application, change the port in the startup command to an available port, such as `5174`. No code changes are required. After startup, access the application using the new address displayed in the terminal.
+- **Backend connection failure:** Confirm that the backend is running. The frontend proxy currently connects to the backend on port `8000`. If the backend port is changed, update the proxy address in `front-end/vite.config.ts` accordingly.
+- **Incompatible PaddlePaddle version:** Before installation, use `nvidia-smi` to check the driver and supported CUDA version, then select a compatible version from the official PaddlePaddle installation page.
+- **Model download failure on the first run:** Confirm that the network connection is working before the first run. If a download fails due to a network issue, restore the connection, restart the application, and check the terminal output.
+- **Application inaccessible from devices on the local network:** Confirm that the devices and server are on the same local network. Access the application using the server’s local network address and the actual frontend port, and check whether the firewall allows connections to that port.
+
+When an issue occurs, record the error messages, the solution, and the results of subsequent verification for reference during future deployments.
 
 ## Usage Overview
 
