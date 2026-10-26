@@ -28,8 +28,7 @@ The following tree lists the project source directories and code files. Paths ar
 |   |   |-- App.vue                                    # Image tasks, filtering, rechecks, review dialogs, and export
 |   |   `-- main.ts                                    # Vue application entry point
 |   `-- vite.config.ts                                 # Development server and backend proxy settings
-|-- tests/                                             # Python tests
-|   `-- test_basic.py                                  # Python tests
+|-- tests/                                             # All test files
 |-- uma/                                               # Python processing and backend package
 |   |-- ocr/                                           # OCR adapters and fusion
 |   |   |-- engines.py                                 # OCR engine adapters
