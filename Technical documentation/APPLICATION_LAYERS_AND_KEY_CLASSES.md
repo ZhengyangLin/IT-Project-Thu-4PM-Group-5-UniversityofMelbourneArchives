@@ -1,4 +1,4 @@
-## 1. Application Layers and Key Classes
+## Application Layers and Key Classes
 
 | Layer | Main code | Responsibility |
 | --- | --- | --- |

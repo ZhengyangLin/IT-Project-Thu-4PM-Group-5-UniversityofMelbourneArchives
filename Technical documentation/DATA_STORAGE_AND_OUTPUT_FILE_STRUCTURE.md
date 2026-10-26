@@ -1,4 +1,4 @@
-## 4. Output File Structure
+## Output File Structure
 
 The default web-processing structure is:
 

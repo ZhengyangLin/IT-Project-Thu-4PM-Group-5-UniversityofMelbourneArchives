@@ -1,12 +1,12 @@
-## 2. Key Algorithms
+## Key Algorithms
 
-### 2.1 Preprocessing and Readability
+### 1 Preprocessing and Readability
 
 `preprocess.run()` decodes the image as grayscale, estimates small skew from thresholded text regions, rotates valid estimates outside the configured deadzone, and applies CLAHE contrast enhancement. It retains a plain deskewed image for geometric analysis and an enhanced version for OCR.
 
 `triage.assess()` estimates character height from connected components. Poor readability produces a warning rather than automatically stopping processing. The pipeline stops if coarse OCR produces no usable tokens. It also stops when over 75% of recognised strings have at most three trimmed characters and no digits, no probe anchors are present, and `Pipeline.force` is false.
 
-### 2.2 Title-Block Localisation
+### 2 Title-Block Localisation
 
 `locate.locate()` tries these methods in order:
 
@@ -18,7 +18,7 @@
 
 These scores are heuristic signals rather than measured accuracy probabilities.
 
-### 2.3 OCR Passes and Fusion
+### 3 OCR Passes and Fusion
 
 The pipeline runs full-page coarse OCR, crops the detected title block, and runs fine OCR at an adjusted scale. Resizing and crop offsets are reversed into the full preprocessed image's coordinates; there is no inverse deskew transform back to the unrotated source.
 
@@ -26,7 +26,7 @@ Within a pass, `fusion.fuse()` filters weak observations, groups overlapping box
 
 `merge_passes()` matches fine and coarse evidence using overlap and text similarity. Different readings remain as `@coarse` alternatives. Unmatched coarse tokens covering at least 70% of a fine-token box are suppressed; remaining coarse-only tokens are restored with agreement capped at `0.5`.
 
-### 2.4 Layout and Field Extraction
+### 4 Layout and Field Extraction
 
 `layout.group_rows()` groups upright tokens by vertical proximity and horizontal gaps; tall vertical tokens are handled separately. `views.build_views()` creates a spatial text grid, an indexed token view, and a flattened token list.
 
@@ -34,7 +34,7 @@ Rules use value patterns, fuzzy labels, architect-name matching, and spatial anc
 
 The eight result fields are `project_name`, `drawing_title`, `architect`, `draughtsperson`, `drawing_number`, `date`, `scale`, and `drawing_type`. Specialised rules handle selected fields; unresolved fields are passed to the LLM.
 
-### 2.5 LLM Completion and Evidence
+### 5 LLM Completion and Evidence
 
 `assign_fields()` sends the text grid, numbered tokens, alternatives, locked values, and deferral reasons when pending fields exist, LLM assistance is enabled, and the OpenAI SDK can be imported. Drawing image pixels are not included.
 
@@ -44,7 +44,7 @@ Returned transcription is compared with cited OCR readings. Supported missing to
 
 Handled model-request or JSON-parsing failures preserve available rule results and mark processing failed. An enabled LLM whose SDK cannot be imported also causes failure when fields remain pending; disabling the LLM leaves them unresolved without itself causing failure. Corrections, original transcription, correction reasons, and token evidence are retained separately.
 
-### 2.6 Confidence Scoring
+### 6 Confidence Scoring
 
 `verify.fuse()` calculates a weighted mean using only available signals:
 

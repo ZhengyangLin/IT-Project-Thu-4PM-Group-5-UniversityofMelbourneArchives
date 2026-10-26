@@ -1,4 +1,4 @@
-## 3. Third-Party Systems and How They Are Called
+## Third-Party Systems and How They Are Called
 
 | Component | Actual use and call mechanism |
 | --- | --- |
