@@ -88,7 +88,7 @@ The following environment requirements are consistent with the installation inst
 | Browser | Used to open the frontend page |
 | Network | An internet connection is required to install dependencies, download models for the first time, and use an external large language model API |
 
-# University of Melbourne Archives Installation and Startup Guide
+# Installation and Startup Guide
 
 For Windows and Ubuntu.
 
