@@ -52,4 +52,4 @@ The Export action downloads `unimelb_image_status.xlsx` (frontend fallback: `exp
 | Highlighting | Reviewed images have a green `image_key` cell. For unreviewed images, fields with confidence below the current `t_high` (`0.75`) have red value and confidence cells. |
 | Formatting | Text values remain text; confidence uses three decimal places. The header and first column are frozen, with header filters enabled. |
 
-The interface exports selected images, or all images matching the current filters when none are selected. Running images or images reserved by another operation block the export.
+The interface exports selected images, or all images matching the current filters when none are selected. Export is blocked if any image included in the export is running or reserved by another operation.

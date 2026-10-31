@@ -258,7 +258,7 @@ This project uses PaddlePaddle and PaddleOCR, both licensed under Apache License
 - [PaddlePaddle License](https://github.com/PaddlePaddle/Paddle/blob/develop/LICENSE)
 - [PaddleOCR License](https://github.com/PaddlePaddle/PaddleOCR/blob/main/LICENSE)
 
-For details of other third-party dependencies and their licenses, see the project handover document.
+For details of other third-party dependencies and their licenses, see the [project handover document](https://app.notion.com/p/Hand-Over-3f8ba5b449e680548818ebe54c0ee816).
 
 Use of these third-party components is subject to their respective license terms. This section describes third-party licenses and does not replace this project's own license terms.
 
