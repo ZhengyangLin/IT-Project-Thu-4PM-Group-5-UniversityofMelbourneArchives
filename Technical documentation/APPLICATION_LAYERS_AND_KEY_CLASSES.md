@@ -20,7 +20,7 @@ Processing modules within `Pipeline`:
 | Extraction | `rules.py`, `patterns.py`, `llm.py`: `LlmClient` | Field patterns and spatial rules; LLM completion of unresolved fields, with client availability checks and request retries. |
 | Validation | `llm.py`, `verify.py` | Model-evidence checks, combined confidence scores, and field review statuses. |
 
-Full-page OCR precedes localisation; cropped OCR follows it. Model evidence is checked during field assignment.
+Full-page OCR precedes localisation; cropped OCR follows it. After the model returns field results, the system checks whether the cited OCR text supports those results.
 
 Supporting code:
 
