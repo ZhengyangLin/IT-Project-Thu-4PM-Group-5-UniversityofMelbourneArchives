@@ -10,6 +10,6 @@
 | Vue, Element Plus, Axios, and Fabric.js | Interface state and controls, backend requests, drawing display, zoom/pan, and evidence overlays. |
 | FastAPI and Uvicorn | Backend application lifecycle and request dispatch to the service layer. |
 | Pydantic | API request and response schemas use `BaseModel`, `Field`, and validators for data validation and serialization. Manual-review results are converted with `model_dump()` before being passed to the service layer. |
-| Vite / Node.js | Node.js runs the Vite development server through `start.bat` or `yarn dev`. Vite serves the Vue frontend and proxies `/Unimelb` requests to the FastAPI backend. |
+| Vite / Node.js | Node.js runs the Vite development server through `yarn dev`. Vite serves the Vue frontend and proxies `/Unimelb` requests to the FastAPI backend. |
 | @element-plus/icons-vue | Vue icon components are imported and rendered in the application interface, including the page heading, status cards, and action controls. |
 
