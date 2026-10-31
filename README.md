@@ -15,6 +15,65 @@ The system uses local deployment. Users access the frontend through a browser, w
 - Export: Export results for selected images or images within the current filters to an Excel file.
 - Large language model assistance: Use the configured external large language model API to assist with field extraction and error correction.
 
+## Repository Structure
+
+The following tree lists the project source directories and code files. Paths are relative to the project root.
+
+```text
+.
+|-- Test code/                                         # Unit, integration, and other test code
+|-- front-end/                                         # Vue frontend
+|   |-- src/                                           # Frontend application source
+|   |   |-- components/                                # Vue components
+|   |   |   `-- FabricImg.vue                          # Drawing viewer and manual review component
+|   |   |-- App.vue                                    # Image tasks, filtering, rechecks, review dialogs, and export
+|   |   `-- main.ts                                    # Vue application entry point
+|   `-- vite.config.ts                                 # Development server and backend proxy settings
+|-- tests/                                             # CI-related test code
+|-- uma/                                               # Python processing and backend package
+|   |-- ocr/                                           # OCR adapters and fusion
+|   |   |-- engines.py                                 # OCR engine adapters
+|   |   `-- fusion.py                                  # OCR result alignment and fusion
+|   |-- web/                                           # FastAPI backend
+|   |   |-- api/                                       # HTTP API layer
+|   |   |   |-- base_api.py                            # Base class for API routers
+|   |   |   `-- Unimelb_api.py                         # Image, OCR task, manual review, and export endpoints
+|   |   |-- schemas/                                   # Request and response models
+|   |   |   |-- health_response.py                     # Health check response model
+|   |   |   |-- result.py                              # Common API response envelope
+|   |   |   |-- Unimelb_request.py                     # OCR, manual review, and export request models
+|   |   |   `-- Unimelb_response.py                    # Image, task, and manual review response models
+|   |   |-- services/                                  # Service interfaces and implementations
+|   |   |   |-- impl/                                  # Service implementation
+|   |   |   |   `-- Unimelb_service_impl.py            # Image discovery, OCR tasks, saved results, review, and export
+|   |   |   `-- Unimelb_service.py                     # Service interface and task conflict exception
+|   |   |-- workers/                                   # OCR process-pool workers
+|   |   |   `-- Unimelb_ocr_worker.py                  # OCR worker initialization and image processing
+|   |   |-- app.py                                     # FastAPI setup and service lifecycle
+|   |   `-- exception_handlers.py                      # API exception handling and error responses
+|   |-- config.py                                      # Configuration definitions and YAML loading
+|   |-- layout.py                                      # Text layout analysis
+|   |-- llm.py                                         # LLM requests and metadata extraction support
+|   |-- locate.py                                      # Title-block localization
+|   |-- logging_utils.py                               # Console and daily file logging
+|   |-- models.py                                      # OCR token, field, and drawing record models
+|   |-- patterns.py                                    # Metadata patterns and OCR character correction helpers
+|   |-- pipeline.py                                    # Coordinates the metadata extraction pipeline
+|   |-- preprocess.py                                  # Image preprocessing
+|   |-- rules.py                                       # Rule-based metadata extraction
+|   |-- table_regions.py                               # Table and frame region detection
+|   |-- trace.py                                       # Intermediate processing trace writer
+|   |-- triage.py                                      # Image readability assessment and manifest generation
+|   |-- unimelb_result_codec.py                        # Conversion of processing records to web results
+|   |-- verify.py                                      # Field validation and review status assignment
+|   |-- views.py                                       # OCR text grid and indexed token views
+|   `-- viz.py                                         # OCR and title-block visualization helpers
+|-- run.py                                             # Command-line image processing entry point
+|-- serve.py                                           # FastAPI backend entry point
+```
+
+For interface changes, start with `front-end/src/App.vue` and `front-end/src/components/FabricImg.vue`. For backend behaviour, start with `uma/web/api/` and `uma/web/services/`. For recognition and metadata extraction, start with `uma/pipeline.py` and its supporting modules.
+
 ## System Requirements
 
 The following environment requirements are consistent with the installation instructions below.
@@ -29,7 +88,7 @@ The following environment requirements are consistent with the installation inst
 | Browser | Used to open the frontend page |
 | Network | An internet connection is required to install dependencies, download models for the first time, and use an external large language model API |
 
-# University of Melbourne Archives Installation and Startup Guide
+# Installation and Startup Guide
 
 For Windows and Ubuntu.
 
@@ -115,7 +174,7 @@ llm:
   model: "Model name"
 ```
 
-If you are not using a large language model, set enabled to false.
+
 
 Place the images in the project folder using the following path:
 
@@ -156,6 +215,7 @@ The first run requires an internet connection to download the models.
 ## 8. Stop the Application
 
 Press Ctrl+C in each terminal window.
+Before shutting down, wait for image processing tasks to finish and save any manual review changes.
 
 Next time, you only need to follow Step 7.
 
@@ -177,24 +237,28 @@ When an issue occurs, record the error messages, the solution, and the results o
 2. View image tasks on the page and filter the images to be processed by folder or processing status.
 3. Click `IS` to process pending images, or use `Check`, `Recheck`, and `Batch recheck` to process specific images.
 4. For tasks with a Success status, click `Manual review` to check and edit the extraction results against the original image. Click `Save review` and confirm the save.
-5. Click `Export` to export results. If images are selected, results for the selected images are exported. If no images are selected, results for all images within the current filters are exported, including those on other pages.
+5. Click `Export` to export results. If images are selected, results for the selected images are exported. If no images are selected, results for all images within the current filters are exported.
 
-Detailed operating instructions are provided in a separate application user manual.
+For detailed operating instructions, see the [User Manual](https://app.notion.com/p/User-Manual-3f8ba5b449e680cbad7af986ba0a4627) on Notion.
 
-## License and Usage Restrictions
+## Project Documentation
+
+All project documentation is available on the [Project Notion Workspace](https://www.notion.so/IT-Project-Thursday-16-00-PM-Group-5-3b2ba5b449e68085b248de41ed2f1ee4?source=copy_link).
+
+## License
 
 This software was developed by a student team at the University of Melbourne for the University of Melbourne Archives.
 
-The project plans to make its source code publicly available to help other libraries, archives, and research institutions improve their efficiency.
+This project's original source code is licensed under the [MIT License](LICENSE). Third-party components used in the project remain subject to their respective license terms.
 
-The specific open-source license for this project has not yet been determined. Third-party components used in the project remain subject to their respective license terms.
-
-### Third-Party Licenses
+### Key Third-Party Licenses
 
 This project uses PaddlePaddle and PaddleOCR, both licensed under Apache License 2.0:
 
 - [PaddlePaddle License](https://github.com/PaddlePaddle/Paddle/blob/develop/LICENSE)
 - [PaddleOCR License](https://github.com/PaddlePaddle/PaddleOCR/blob/main/LICENSE)
+
+For details of other third-party dependencies and their licenses, see the project handover document.
 
 Use of these third-party components is subject to their respective license terms. This section describes third-party licenses and does not replace this project's own license terms.
 
