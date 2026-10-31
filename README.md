@@ -239,22 +239,26 @@ When an issue occurs, record the error messages, the solution, and the results o
 4. For tasks with a Success status, click `Manual review` to check and edit the extraction results against the original image. Click `Save review` and confirm the save.
 5. Click `Export` to export results. If images are selected, results for the selected images are exported. If no images are selected, results for all images within the current filters are exported.
 
-Detailed operating instructions are provided in a separate application user manual.
+For detailed operating instructions, see the [User Manual](https://app.notion.com/p/User-Manual-3f8ba5b449e680cbad7af986ba0a4627) on Notion.
 
-## License and Usage Restrictions
+## Project Documentation
+
+All project documentation is available on the [Project Notion Workspace](https://www.notion.so/IT-Project-Thursday-16-00-PM-Group-5-3b2ba5b449e68085b248de41ed2f1ee4?source=copy_link).
+
+## License
 
 This software was developed by a student team at the University of Melbourne for the University of Melbourne Archives.
 
-The project plans to make its source code publicly available to help other libraries, archives, and research institutions improve their efficiency.
+This project's original source code is licensed under the [MIT License](LICENSE). Third-party components used in the project remain subject to their respective license terms.
 
-The specific open-source license for this project has not yet been determined. Third-party components used in the project remain subject to their respective license terms.
-
-### Third-Party Licenses
+### Key Third-Party Licenses
 
 This project uses PaddlePaddle and PaddleOCR, both licensed under Apache License 2.0:
 
 - [PaddlePaddle License](https://github.com/PaddlePaddle/Paddle/blob/develop/LICENSE)
 - [PaddleOCR License](https://github.com/PaddlePaddle/PaddleOCR/blob/main/LICENSE)
+
+For details of other third-party dependencies and their licenses, see the project handover document.
 
 Use of these third-party components is subject to their respective license terms. This section describes third-party licenses and does not replace this project's own license terms.
 
